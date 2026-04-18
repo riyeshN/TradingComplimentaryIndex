@@ -1,0 +1,53 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+static/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Data files
+data/trade_data/
+data/TradeMapData/
+*.csv
+*.xlsx
+*.xls
+*.json
+*.parquet
+
+# Secrets / env
+.env*
+secrets.py
