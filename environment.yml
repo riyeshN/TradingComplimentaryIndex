@@ -1,0 +1,23 @@
+# Commands:
+#   Create:     conda env create -f environment.yml
+#   Activate:   conda activate Econometrics_Deps
+#   Deactivate: conda deactivate
+#   Update:     conda env update -f environment.yml --prune
+#   List envs:  conda env list
+
+name: Econometrics_Deps
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - django==4.2.19
+      - pandas==3.0.2
+      - numpy==2.4.4
+      - matplotlib==3.10.8
+      - comtradeapicall==1.3.0
+      - urllib3==2.6.3
+      - asgiref==3.11.1
+      - sqlparse==0.5.5
+      - pillow==12.2.0

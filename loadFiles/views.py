@@ -3,7 +3,8 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 import logging
 import json
-from loadFiles.services.TradeMapExcelData import TradeMapExcelData
+from loadFiles.services.TCICalculator import TCICalculator
+from loadFiles.services.TradeMapLoader import TradeMapLoader
 from loadFiles.services.ComtradeDownload import ComtradeReferenceData, ComtradeTradeData
 
 # Create your views here.
@@ -39,11 +40,28 @@ def fetch_trade_data(request):
     else:
         return HttpResponse("Method not allowed", status=405)
 
-def extract_data_from_trade_map_excel(request):
-    if request.method == "GET":
-        trade_map_excel_data = TradeMapExcelData()
-        trade_map_excel_data.process_calculate_trading_complimentary_index()
-        return JsonResponse({"status":"Success"}, status=200)
+@csrf_exempt
+def calculate_tci(request):
+    if request.method not in ("GET", "POST"):
+        return HttpResponse("Method not allowed", status=405)
 
+    countries = None
+    hs4_codes = None
+    if request.method == "POST":
+        body = json.loads(request.body or b"{}")
+        countries = body.get("countries") or None
+        hs4_codes = body.get("hs4_codes") or None
+
+    TCICalculator().run(countries=countries, hs4_codes=hs4_codes)
+    return JsonResponse({"status": "Success"}, status=200)
+
+def load_trade_data_to_db(request):
+    if request.method == "GET":
+        try:
+            TradeMapLoader().load()
+            return JsonResponse({"status": "Success"}, status=200)
+        except Exception as e:
+            logger.error("Error in load_trade_data_to_db: %s", e)
+            return JsonResponse({"status": "Error", "message": str(e)}, status=500)
     else:
         return HttpResponse("Method not allowed", status=405)
