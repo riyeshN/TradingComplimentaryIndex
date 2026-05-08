@@ -66,14 +66,15 @@ Entry point: `TCICalculator().run()`
 All four DB tables are queried directly in long format — no intermediate wide DataFrames or melt/pivot steps.
 
 1. `_load_from_db()` — queries all 4 models, separates TOTAL rows as denominator lookups, precomputes reporter-independent HS4-level world totals (`World Export HS4 Total`), merges per partner (China, US) into `hs6_trade_data_by_partner`
-2. `_filter_by_hs_chapter_and_year()` — HS chapters 84–90 (machinery/electronics), years 2001–2024
-3. `_calculate_tci_drysdale_garnaut()` — `(Xi_k/Xi) × (Mj_k/Mj) × (WX/WX_k)`
-4. `_calculate_rca_and_tci_rca()` — Balassa RCA for reporter and partner; TCI via RCA product
-5. `_aggregate_hs6_to_hs4()` — weighted aggregation; active pairs only (reporter exports AND partner imports product)
-6. `_export_excel(countries, hs4_codes)` — writes `{partner}_TCI.xlsx` with two sheets per partner
-7. `_export_hs4_tci_charts(countries, hs4_codes)` — writes one PNG per HS4 code per partner (TCI RCA time series by country)
+2. `_filter_by_ict_scope_and_year()` — restricts to the 23 HS4 headings in the UNCTAD ICT goods classification (`HS4_ICT_HEADINGS`, HS 2022) and years 2001–2024
+3. `_calculate_tci_drysdale_garnaut()` — HS6 DG: `(Xi_k/Xi) × (Mj_k/Mj) × (WX/WX_k)`
+4. `_calculate_rca_and_tci_rca()` — HS6 Balassa RCAs; HS6 RCA-decomposition TCI (`TCI_RCA_DG_Decomposition`, internal cross-check); HS6 Tan Fen TCI (`TCI Tan Fen HS6` = RCA × RCA, no world-share factor); `Active_Pair` flag per row
+5. `_aggregate_hs6_to_hs4()` — HS4 Cij = sum of HS6 Cij in heading (preserves bilateral product matching); HS4 RCA = weighted avg HS6 RCA with weight `W_k/W_HS4` (auxiliary; not used in HS4 Cij)
+6. `_calculate_headline_cij()` — Headline Cij per (reporter, partner, year) = sum of HS6 Cij over the full ICT scope (DG eq. 2 applied directly); both DG and Tan Fen forms reported
+7. `_export_excel(countries, hs4_codes)` — writes `{partner}_TCI.xlsx` with three sheets per partner: `Country Summary`, `HS4 Summary`, `HS6 Detail`. The `hs4_codes` filter applies to the HS4 and HS6 sheets only — the headline always reports the full ICT-scope number
+8. `_export_hs4_tci_charts(countries, hs4_codes)` — writes one PNG per HS4 code per partner: time series of HS4 DG Cij by reporter country
 
-**Key data structure:** `hs6_trade_data_by_partner` — dict keyed by partner name ("China", "US"), value is a long-format DataFrame with one row per (reporter, year, HS6 product).
+**Key data structure:** `hs6_trade_data_by_partner` — dict keyed by partner name ("China", "US"), value is a long-format DataFrame with one row per (reporter, year, HS6 product). Also `hs4_index_by_partner` and `headline_cij_by_partner` dicts for downstream tiers.
 
 ### DB Loading (`loadFiles/services/TradeMapLoader.py`)
 Entry point: `TradeMapLoader().load()`
@@ -84,20 +85,21 @@ One Excel workbook and one PNG per HS4 code, all written to `data/TradeMapData/e
 
 | File | Content |
 |------|---------|
-| `{partner}_TCI.xlsx` — sheet `HS4 Summary` | One row per (Country, Year, HS4) — TCI (both formulas), RCA, trade totals, active pair count |
-| `{partner}_TCI.xlsx` — sheet `HS6 Detail` | One row per (Country, Year, HS6 product) — all raw flows, weights, and TCI/RCA components; validates HS4 Summary by construction |
-| `{partner}_{HS4}_TCI_RCA.png` | Time-series line chart of TCI (RCA formula) by reporter country for that HS4 code |
+| `{partner}_TCI.xlsx` — sheet `Country Summary` | One row per (Country, Year) — Headline DG Cij, Headline Tan Fen Cij, Active HS6 pair count |
+| `{partner}_TCI.xlsx` — sheet `HS4 Summary` | One row per (Country, Year, HS4) — DG Cij (sum of HS6), Tan Fen Cij (sum of HS6), HS4 RCA (export and import), trade totals, active pair count |
+| `{partner}_TCI.xlsx` — sheet `HS6 Detail` | One row per (Country, Year, HS6 product) — all raw flows, RCA values, three TCI columns (DG, RCA-decomposition cross-check, Tan Fen), within-HS4 world share, active flag |
+| `{partner}_{HS4}_TCI_DG.png` | Time-series line chart of HS4 DG Cij by reporter country |
 
 ### Django App Structure
 - **`loadFiles/views.py`** — 4 HTTP views wiring endpoints to services
 - **`loadFiles/services/`** — business logic (Comtrade download, TradeMap processing)
 - **`loadFiles/models.py`** — 5 DB models (see below)
-- **`loadFiles/tests.py`** — validation test suite (see below)
+- **`loadFiles/tests/`** — validation test suite (see below)
 - **`loadFiles/management/commands/`** — supplementary CLI validation commands
 - **`TradingComplimentaryIndexRoot/`** — Django project config (settings, URL routing)
 - **`docs/`** — formal methodology documentation for academic paper
 
-### Test Suite (`loadFiles/tests.py`)
+### Test Suite (`loadFiles/tests/`)
 Two test classes validate the pipeline before drawing conclusions:
 
 | Class | What it validates | External source | Threshold |
@@ -130,7 +132,9 @@ Five models store all trade data; DB is the source of truth for TCI pipeline:
 All value fields are in USD thousands. TOTAL rows are included for aggregate calculations.
 
 ### Formula Note
-`TCI_Drysdale_Garnaut` and `TCI Using RCA` are algebraically identical: `(Xi_k/Xi) × (Mj_k/Mj) × (WX/WX_k)`. The Drysdale & Garnaut path computes TCI directly; the RCA path computes `RCA Reporter Export × RCA Partner Import × (1/share_of_world)` — same result, different factoring.
+At HS6 level the pipeline computes Drysdale-Garnaut Cij directly (`TCI_Drysdale_Garnaut`) and the algebraically identical RCA-decomposition `RCA_x × RCA_m × (W_k/W)` (`TCI_RCA_DG_Decomposition`) as an internal cross-check — these two columns must agree to floating-point precision. The Tan Fen (2024) form `RCA_x × RCA_m` (no world-share factor) is a distinct metric, reported separately as `TCI Tan Fen HS6`.
+
+HS4 Cij is computed as the **sum of HS6 Cij values within each heading** — not as a product of HS4 RCAs. The two formulations are not algebraically equal: the sum-of-HS6 form preserves bilateral HS6-level product matching, whereas the product-of-HS4-RCAs form (`(ΣX_k)(ΣM_k)`) treats a heading as complementary even when reporter and partner trade different HS6 codes within it. HS4 RCA is reported as an auxiliary heading-level specialisation metric only. See `README.md` and `docs/validation_methodology.md` for the full derivation.
 
 ### Python Environment
 Conda environment: `Econometrics_Deps`

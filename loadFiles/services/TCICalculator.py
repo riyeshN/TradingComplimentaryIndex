@@ -7,37 +7,59 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 EXPORT_DIR = "./data/TradeMapData/export/"
-HS_CHAPTERS_TO_INCLUDE = ['84', '85', '86', '87', '88', '89', '90']
+# UNCTAD ICT goods classification (HS 2022) — 23 HS4 headings, 107 HS6 codes.
+# Source: readings/ICTList.docx
+HS4_ICT_HEADINGS = [
+    '8443', '8470', '8471', '8472', '8473',
+    '8517', '8518', '8519', '8521', '8522', '8523', '8524', '8525',
+    '8527', '8528', '8529', '8531', '8534', '8540', '8541', '8542',
+    '9013', '9504',
+]
 YEARS_TO_INCLUDE = [str(y) for y in range(2001, 2025)]
 
 
 class TCICalculator:
     """
-    Calculates Trade Complementarity Index (TCI) using two formulas:
-      - Drysdale & Garnaut:  (Xi_k/Xi) × (Mj_k/Mj) × (WX/WX_k)
-      - RCA-based:           RCA_export × RCA_import × proportion_world_trade
-        (algebraically identical to Drysdale & Garnaut; used as a cross-check)
+    Calculates Trade Complementarity Index (TCI) over the UNCTAD ICT goods scope
+    (HS 2022, 23 HS4 headings, 107 HS6 codes) for Indo-Pacific reporters versus
+    China and the United States.
+
+    Three-tier output, all derived from a single HS6 source:
+      - HS6 Cij (Drysdale-Garnaut)         — single-product values, audit trail.
+      - HS4 Cij  = sum of HS6 Cij in heading — preserves bilateral product matching.
+      - Headline = sum of HS6 Cij over scope — single Cij per (reporter, partner, year).
+
+    Two TCI formulations are reported at every tier:
+      - Drysdale-Garnaut: (Xi_k/Xi) × (Mj_k/Mj) × (WX/WX_k)              — primary.
+      - Tan Fen (2024):   RCA_export × RCA_import (no world-share factor) — secondary.
+
+    HS4 RCA is reported as an auxiliary heading-level specialisation metric. It is
+    derived as a weighted average of HS6 RCA values with weight = (W_k / W_HS4),
+    and is not used in the HS4 Cij calculation.
 
     Data is read from the database (loaded by TradeMapLoader).
-    Results are exported as a two-sheet Excel workbook per partner to EXPORT_DIR.
+    Results are exported as a three-sheet Excel workbook per partner to EXPORT_DIR.
+    See README.md and docs/validation_methodology.md for the full methodology.
     """
 
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Built during processing — keyed by partner ("China" or "US")
-        self.hs6_trade_data_by_partner: dict[str, pd.DataFrame] = {}
-        self.hs4_index_by_partner:      dict[str, pd.DataFrame] = {}
-        self.hs6_weighted_by_partner:   dict[str, pd.DataFrame] = {}
+        self.hs6_trade_data_by_partner:   dict[str, pd.DataFrame] = {}
+        self.hs4_index_by_partner:        dict[str, pd.DataFrame] = {}
+        self.hs6_weighted_by_partner:     dict[str, pd.DataFrame] = {}
+        self.headline_cij_by_partner:     dict[str, pd.DataFrame] = {}
 
     # ── Public entry point ───────────────────────────────────────────────────
 
     def run(self, countries: list[str] | None = None, hs4_codes: list[str] | None = None):
         self._load_from_db()
-        self._filter_by_hs_chapter_and_year()
+        self._filter_by_ict_scope_and_year()
         self._calculate_tci_drysdale_garnaut()
         self._calculate_rca_and_tci_rca()
         self._aggregate_hs6_to_hs4()
+        self._calculate_headline_cij()
         self._export_excel(countries, hs4_codes)
         self._export_hs4_tci_charts(countries, hs4_codes)
 
@@ -238,11 +260,11 @@ class TCICalculator:
 
     # ── Pipeline steps ───────────────────────────────────────────────────────
 
-    def _filter_by_hs_chapter_and_year(self):
+    def _filter_by_ict_scope_and_year(self):
         for partner_name, hs6_data in self.hs6_trade_data_by_partner.items():
-            chapter_mask = hs6_data['Product code'].astype(str).str[:2].str.upper().isin(HS_CHAPTERS_TO_INCLUDE)
+            hs4_mask = hs6_data['Product code'].astype(str).str[:4].isin(HS4_ICT_HEADINGS)
             year_mask = hs6_data['Year'].astype(str).isin(YEARS_TO_INCLUDE)
-            self.hs6_trade_data_by_partner[partner_name] = hs6_data[chapter_mask & year_mask]
+            self.hs6_trade_data_by_partner[partner_name] = hs6_data[hs4_mask & year_mask]
 
     def _calculate_tci_drysdale_garnaut(self):
         """TCI = (Xi_k / Xi) × (Mj_k / Mj) × (WX / WX_k)"""
@@ -260,10 +282,19 @@ class TCICalculator:
 
     def _calculate_rca_and_tci_rca(self):
         """
-        RCA_export = (Xi_k/Xi) / (WX_k/WX)
-        RCA_import = (Mj_k/Mj) / (WX_k/WX)
-        TCI_RCA    = RCA_export × RCA_import × (WX_k/WX)
-        Algebraically equals TCI_Drysdale_Garnaut; used as a validation cross-check.
+        Balassa RCAs at HS6:
+          RCA_export = (Xi_k/Xi) / (WX_k/WX)
+          RCA_import = (Mj_k/Mj) / (WX_k/WX)
+
+        Two TCI forms at HS6:
+          TCI_RCA_DG_Decomposition = RCA_export × RCA_import × (WX_k/WX)
+              — algebraically equal to TCI_Drysdale_Garnaut; internal consistency check.
+          TCI_Tan_Fen_HS6          = RCA_export × RCA_import
+              — Tan Fen (2024) form, no world-share factor; reported alongside DG.
+
+        Active_Pair flag = 1 when reporter has world exports AND partner has world imports
+        of the HS6 product. Counts the HS6 lines that contribute non-zero values to the
+        TCI sum at HS4 and headline level.
         """
         for partner_name, hs6_data in self.hs6_trade_data_by_partner.items():
             world_product_share = (
@@ -284,102 +315,99 @@ class TCICalculator:
                 hs6_data["World Export of item k"] / hs6_data["Total World Export"]
             ).replace(0, np.nan).fillna(0)
 
-            hs6_data["TCI Using RCA"] = (
+            hs6_data["TCI_RCA_DG_Decomposition"] = (
                 hs6_data["RCA Reporter Export"]
                 * hs6_data["RCA Partner Import"]
                 * hs6_data["Proportion World Trade"]
             )
 
+            hs6_data["TCI Tan Fen HS6"] = (
+                hs6_data["RCA Reporter Export"]
+                * hs6_data["RCA Partner Import"]
+            )
+
+            hs6_data["Active_Pair"] = (
+                (hs6_data["Reporter Export To World"] > 0)
+                & (hs6_data["Partner Import From World"] > 0)
+            ).astype(int)
+
             self.hs6_trade_data_by_partner[partner_name] = hs6_data
 
-        self.logger.info("RCA and TCI (RCA) calculated.")
+        self.logger.info("HS6 RCA, DG-decomposition TCI and Tan Fen TCI calculated.")
 
     def _aggregate_hs6_to_hs4(self):
+        """
+        HS4 Cij = sum of HS6 Cij values within each HS4 heading. Preserves the
+        bilateral-product matching information in HS6: a heading registers
+        complementarity only where reporter and partner each have non-zero world
+        flows of the same HS6 code.
+
+        HS4 RCA = weighted average of HS6 RCA values, weight = W_k / W_HS4
+        (each HS6 code's share of world trade within its HS4 heading). Algebraically
+        identical to applying Balassa directly to HS4 totals; used here as auxiliary
+        heading-level specialisation metric, not as input to HS4 Cij.
+        """
         for partner_name, hs6_data in self.hs6_trade_data_by_partner.items():
             hs6_data = hs6_data.copy()
             hs6_data['HS4'] = hs6_data['Product code'].astype(str).str[:4]
 
-            # Active pair: reporter had bilateral trade AND partner imports that product
-            hs6_data['Active_Pair'] = (
-                (hs6_data['Reporter Export To Partner'] > 0)
-                & (hs6_data['Partner Import From World'] > 0)
-            ).astype(int)
+            world_export_within_hs4 = hs6_data.groupby(
+                ['Country', 'Year', 'HS4']
+            )['World Export of item k'].transform('sum')
+            hs6_data['World Share Within HS4'] = (
+                hs6_data['World Export of item k']
+                / world_export_within_hs4.replace(0, np.nan)
+            ).fillna(0)
 
-            active_hs4_group_export = hs6_data.loc[
-                hs6_data['Active_Pair'] == 1
-            ].groupby(['Country', 'Year', 'HS4'])['Reporter Export To World'].transform('sum')
-
-            hs6_data['HS4 Group Trade'] = active_hs4_group_export
-
-            hs6_data['HS4 Weight'] = np.where(
-                hs6_data['Active_Pair'] == 1,
-                hs6_data['Reporter Export To World'] / hs6_data['HS4 Group Trade'].replace(0, np.nan),
-                0,
+            hs6_data['RCA Export Weighted Contribution'] = (
+                hs6_data['RCA Reporter Export'] * hs6_data['World Share Within HS4']
             )
-            hs6_data['Cij Weighted']     = hs6_data['HS4 Weight'] * hs6_data['TCI_Drysdale_Garnaut']
-            hs6_data['TCI RCA Weighted'] = hs6_data['HS4 Weight'] * hs6_data['TCI Using RCA']
+            hs6_data['RCA Import Weighted Contribution'] = (
+                hs6_data['RCA Partner Import'] * hs6_data['World Share Within HS4']
+            )
 
             hs4_aggregated = (
                 hs6_data.groupby(['Country', 'Year', 'HS4'])
                 .agg(
-                    Cij_Weighted                   = ('Cij Weighted',                    'sum'),
-                    TradeComplimentary_RCA_Weighted = ('TCI RCA Weighted',                'sum'),
-                    Total_Reporter_Export           = ('Reporter Export To World',         'sum'),
-                    Total_Partner_Import            = ('Partner Import From World',        'sum'),
-                    Total_World_Export_k            = ('World Export HS4 Total',           'first'),
-                    Num_Active_HS6_Pairs            = ('Active_Pair',                     'sum'),
-                    Reporter_Total_All_Products     = ("Reporter's Total Export To World", 'first'),
-                    Partner_Total_All_Products      = ("Partner's Total Import From World",'first'),
-                    World_Total_All_Products        = ('Total World Export',               'first'),
+                    TCI_DG_4digit         = ('TCI_Drysdale_Garnaut',             'sum'),
+                    TCI_Tan_Fen_4digit    = ('TCI Tan Fen HS6',                  'sum'),
+                    RCA_Export_4digit     = ('RCA Export Weighted Contribution', 'sum'),
+                    RCA_Import_4digit     = ('RCA Import Weighted Contribution', 'sum'),
+                    Total_Reporter_Export = ('Reporter Export To World',         'sum'),
+                    Total_Partner_Import  = ('Partner Import From World',        'sum'),
+                    Total_World_Export_K  = ('World Export HS4 Total',           'first'),
+                    Num_Active_HS6_Pairs  = ('Active_Pair',                      'sum'),
                 )
                 .reset_index()
             )
 
-            hs4_aggregated['RCA_Export_4digit'] = (
-                (hs4_aggregated['Total_Reporter_Export'] / hs4_aggregated['Reporter_Total_All_Products'].replace(0, np.nan))
-                / (hs4_aggregated['Total_World_Export_k'] / hs4_aggregated['World_Total_All_Products'].replace(0, np.nan))
-            )
-            hs4_aggregated['RCA_Import_4digit'] = (
-                (hs4_aggregated['Total_Partner_Import'] / hs4_aggregated['Partner_Total_All_Products'].replace(0, np.nan))
-                / (hs4_aggregated['Total_World_Export_k'] / hs4_aggregated['World_Total_All_Products'].replace(0, np.nan))
-            )
-            hs4_aggregated['Proportion_World_Trade_4digit'] = (
-                hs4_aggregated['Total_World_Export_k'] / hs4_aggregated['World_Total_All_Products'].replace(0, np.nan)
-            )
-            hs4_aggregated['TradeComplimentary_RCA_ReCalculated'] = (
-                hs4_aggregated['RCA_Export_4digit']
-                * hs4_aggregated['RCA_Import_4digit']
-                * hs4_aggregated['Proportion_World_Trade_4digit']
-            )
-
-            # Zero-active groups should have zero weighted TCI (sanity guard)
-            zero_active_mask = hs4_aggregated['Num_Active_HS6_Pairs'] == 0
-            if zero_active_mask.any():
-                bad_rows = hs4_aggregated.loc[zero_active_mask & (
-                    (hs4_aggregated['Cij_Weighted'].abs() > 0)
-                    | (hs4_aggregated['TradeComplimentary_RCA_Weighted'].abs() > 0)
-                    | (hs4_aggregated['TradeComplimentary_RCA_ReCalculated'].abs() > 0)
-                )]
-                if not bad_rows.empty:
-                    self.logger.warning(
-                        "Zero-active HS4 groups with nonzero TCI for partner %s:\n%s",
-                        partner_name,
-                        bad_rows[['Country', 'Year', 'HS4', 'Cij_Weighted']],
-                    )
-                hs4_aggregated.loc[zero_active_mask, [
-                    'Cij_Weighted', 'TradeComplimentary_RCA_Weighted', 'TradeComplimentary_RCA_ReCalculated',
-                ]] = 0
-
-            hs4_aggregated = hs4_aggregated[[
-                'Country', 'Year', 'HS4',
-                'Cij_Weighted', 'TradeComplimentary_RCA_Weighted', 'TradeComplimentary_RCA_ReCalculated',
-                'RCA_Export_4digit', 'RCA_Import_4digit', 'Proportion_World_Trade_4digit',
-                'Total_Reporter_Export', 'Total_Partner_Import', 'Total_World_Export_k',
-                'Num_Active_HS6_Pairs',
-            ]]
-
             self.hs4_index_by_partner[partner_name]    = hs4_aggregated
             self.hs6_weighted_by_partner[partner_name] = hs6_data
+
+    def _calculate_headline_cij(self):
+        """
+        Headline Cij for each (reporter, partner, year) — sum of HS6 Cij across the
+        full ICT scope. Drysdale-Garnaut is the primary index; Tan Fen is reported
+        for sensitivity comparison. This is Drysdale-Garnaut (1982, eq. 2) applied
+        to the full scope of the present study.
+        """
+        for partner_name, hs6_data in self.hs6_trade_data_by_partner.items():
+            headline = (
+                hs6_data.groupby(['Country', 'Year'])
+                .agg(
+                    Headline_Cij_DG      = ('TCI_Drysdale_Garnaut', 'sum'),
+                    Headline_Cij_Tan_Fen = ('TCI Tan Fen HS6',      'sum'),
+                    Num_Active_HS6_Pairs = ('Active_Pair',          'sum'),
+                )
+                .reset_index()
+                .sort_values(['Country', 'Year'])
+                .reset_index(drop=True)
+            )
+            self.headline_cij_by_partner[partner_name] = headline
+            self.logger.info(
+                "Headline Cij computed for partner %s (%d reporter-year rows).",
+                partner_name, len(headline),
+            )
 
     # ── Export ───────────────────────────────────────────────────────────────
 
@@ -387,19 +415,26 @@ class TCICalculator:
         export_dir = Path(EXPORT_DIR)
         export_dir.mkdir(parents=True, exist_ok=True)
 
+        country_summary_columns = {
+            'Country':              'Country',
+            'Year':                 'Year',
+            'Headline_Cij_DG':      'Headline_Cij_Drysdale_Garnaut',
+            'Headline_Cij_Tan_Fen': 'Headline_Cij_Tan_Fen',
+            'Num_Active_HS6_Pairs': 'Active_HS6_Pairs',
+        }
+
         hs4_summary_columns = {
-            'Country':                    'Country',
-            'Year':                       'Year',
-            'HS4':                        'HS4',
-            'Cij_Weighted':               'TCI_Drysdale_Garnaut',
-            'TradeComplimentary_RCA_Weighted': 'TCI_RCA',
-            'RCA_Export_4digit':          'RCA_Reporter_Export',
-            'RCA_Import_4digit':          'RCA_Partner_Import',
-            'Proportion_World_Trade_4digit': 'Proportion_World_Trade',
-            'Total_Reporter_Export':      'Total_Reporter_Export_USD_thousands',
-            'Total_Partner_Import':       'Total_Partner_Import_USD_thousands',
-            'Total_World_Export_k':       'Total_World_Export_USD_thousands',
-            'Num_Active_HS6_Pairs':       'Active_HS6_Pairs',
+            'Country':              'Country',
+            'Year':                 'Year',
+            'HS4':                  'HS4',
+            'TCI_DG_4digit':        'TCI_Drysdale_Garnaut',
+            'TCI_Tan_Fen_4digit':   'TCI_Tan_Fen',
+            'RCA_Export_4digit':    'RCA_Reporter_Export',
+            'RCA_Import_4digit':    'RCA_Partner_Import',
+            'Total_Reporter_Export':'Total_Reporter_Export_USD_thousands',
+            'Total_Partner_Import': 'Total_Partner_Import_USD_thousands',
+            'Total_World_Export_K': 'Total_World_Export_HS4_USD_thousands',
+            'Num_Active_HS6_Pairs': 'Active_HS6_Pairs',
         }
 
         hs6_detail_columns = {
@@ -417,29 +452,37 @@ class TCICalculator:
             "Partner's Total Import From World":'Total_Partner_Import_USD_thousands',
             'Total World Export':               'Total_World_Export_USD_thousands',
             'TCI_Drysdale_Garnaut':             'TCI_Drysdale_Garnaut',
+            'TCI_RCA_DG_Decomposition':         'TCI_RCA_DG_Decomposition',
+            'TCI Tan Fen HS6':                  'TCI_Tan_Fen',
             'RCA Reporter Export':              'RCA_Reporter_Export',
             'RCA Partner Import':               'RCA_Partner_Import',
             'Proportion World Trade':           'Proportion_World_Trade',
-            'TCI Using RCA':                    'TCI_RCA',
+            'World Share Within HS4':           'World_Share_Within_HS4',
             'Active_Pair':                      'Active_Pair',
-            'HS4 Group Trade':                  'HS4_Group_Trade',
-            'HS4 Weight':                       'HS4_Weight',
-            'Cij Weighted':                     'HS6_TCI_Drysdale_Garnaut_Weighted',
-            'TCI RCA Weighted':                 'HS6_TCI_RCA_Weighted',
         }
 
         for partner_name in self.hs4_index_by_partner:
             hs4_data = self.hs4_index_by_partner[partner_name].copy()
             hs6_data = self.hs6_weighted_by_partner[partner_name].copy()
+            country_data = self.headline_cij_by_partner[partner_name].copy()
 
             if countries is not None:
                 hs4_data = hs4_data[hs4_data['Country'].isin(countries)]
                 hs6_data = hs6_data[hs6_data['Country'].isin(countries)]
+                country_data = country_data[country_data['Country'].isin(countries)]
 
+            # hs4_codes filter applies only to HS4 and HS6 sheets — Country Summary
+            # always reports the full ICT-scope headline regardless of HS4 subset.
             if hs4_codes is not None:
                 hs4_data = hs4_data[hs4_data['HS4'].isin(hs4_codes)]
                 hs6_data = hs6_data[hs6_data['HS4'].isin(hs4_codes)]
 
+            country_sheet = (
+                country_data[list(country_summary_columns.keys())]
+                .rename(columns=country_summary_columns)
+                .sort_values(['Country', 'Year'])
+                .reset_index(drop=True)
+            )
             hs4_sheet = (
                 hs4_data[list(hs4_summary_columns.keys())]
                 .rename(columns=hs4_summary_columns)
@@ -455,10 +498,14 @@ class TCICalculator:
 
             output_path = export_dir / f"{partner_name}_TCI.xlsx"
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                country_sheet.to_excel(writer, sheet_name='Country Summary', index=False)
                 hs4_sheet.to_excel(writer, sheet_name='HS4 Summary', index=False)
                 hs6_sheet.to_excel(writer, sheet_name='HS6 Detail', index=False)
 
-            self.logger.info("Exported %s (%d HS4 rows, %d HS6 rows).", output_path, len(hs4_sheet), len(hs6_sheet))
+            self.logger.info(
+                "Exported %s (%d country-year rows, %d HS4 rows, %d HS6 rows).",
+                output_path, len(country_sheet), len(hs4_sheet), len(hs6_sheet),
+            )
 
     def _export_hs4_tci_charts(self, countries: list[str] | None, hs4_codes: list[str] | None):
         export_dir = Path(EXPORT_DIR)
@@ -474,7 +521,7 @@ class TCICalculator:
 
             data = data.copy()
             data['Year'] = pd.to_numeric(data['Year'], errors='coerce')
-            data = data.dropna(subset=['Year', 'TradeComplimentary_RCA_Weighted'])
+            data = data.dropna(subset=['Year', 'TCI_DG_4digit'])
             data = data.sort_values('Year')
 
             for hs4_code in data['HS4'].unique():
@@ -483,16 +530,16 @@ class TCICalculator:
                 fig, ax = plt.subplots(figsize=(12, 6))
                 for country_name in sorted(hs4_data_filtered['Country'].unique()):
                     country_rows = hs4_data_filtered[hs4_data_filtered['Country'] == country_name]
-                    ax.plot(country_rows['Year'], country_rows['TradeComplimentary_RCA_Weighted'],
+                    ax.plot(country_rows['Year'], country_rows['TCI_DG_4digit'],
                             marker='o', label=country_name)
 
-                ax.set_title(f'Trade Complementarity Index (RCA) — HS4 {hs4_code} — Partner: {partner_name}')
+                ax.set_title(f'Trade Complementarity Index — HS4 {hs4_code} — Partner: {partner_name}')
                 ax.set_xlabel('Year')
-                ax.set_ylabel('TCI (RCA)')
+                ax.set_ylabel('TCI (Drysdale-Garnaut, sum of HS6)')
                 ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
                 ax.grid(True, linestyle='--', alpha=0.5)
                 fig.tight_layout()
-                fig.savefig(export_dir / f"{partner_name}_{hs4_code}_TCI_RCA.png")
+                fig.savefig(export_dir / f"{partner_name}_{hs4_code}_TCI_DG.png")
                 plt.close(fig)
 
         self.logger.info("HS4 TCI charts exported.")
