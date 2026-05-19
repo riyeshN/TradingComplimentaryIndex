@@ -15,6 +15,35 @@ HS4_ICT_HEADINGS = [
     '8527', '8528', '8529', '8531', '8534', '8540', '8541', '8542',
     '9013', '9504',
 ]
+# HS4 heading names are classification metadata, not trade data — the DB stores
+# only HS6 product labels (HSProduct), so heading-level names are not available
+# there. These come from the same source as HS4_ICT_HEADINGS: the UNCTAD ICT goods
+# classification / ITC Trade Map (readings/ICTList.docx).
+HS4_ICT_LABELS = {
+    '8443': 'Printing machinery',
+    '8470': 'Calculating machines, data recording',
+    '8471': 'Automatic data-processing machines',
+    '8472': 'Office machines',
+    '8473': 'Parts and accessories',
+    '8517': 'Telephone sets, smartphones, network apparatus',
+    '8518': 'Microphones, loudspeakers',
+    '8519': 'Sound recording / reproducing apparatus',
+    '8521': 'Video recording / reproducing apparatus',
+    '8522': 'Parts for sound and video apparatus',
+    '8523': 'Discs, tapes, solid-state storage, smart cards',
+    '8524': 'Flat panel display modules',
+    '8525': 'Transmission apparatus for radio / TV',
+    '8527': 'Reception apparatus for radio-broadcasting',
+    '8528': 'Monitors, projectors',
+    '8529': 'Parts for displays and transmission apparatus',
+    '8531': 'Electric signalling apparatus',
+    '8534': 'Printed circuits',
+    '8540': 'Thermionic, cathode and photo-cathode tubes',
+    '8541': 'Semiconductor devices, photosensitive elements',
+    '8542': 'Electronic integrated circuits',
+    '9013': 'Lasers, optical appliances',
+    '9504': 'Video game consoles',
+}
 YEARS_TO_INCLUDE = [str(y) for y in range(2001, 2025)]
 
 
@@ -62,6 +91,7 @@ class TCICalculator:
         self._calculate_headline_cij()
         self._export_excel(countries, hs4_codes)
         self._export_hs4_tci_charts(countries, hs4_codes)
+        self._export_word_summary(countries, hs4_codes)
 
     # ── Load from DB ─────────────────────────────────────────────────────────
 
@@ -543,3 +573,167 @@ class TCICalculator:
                 plt.close(fig)
 
         self.logger.info("HS4 TCI charts exported.")
+
+    def _export_word_summary(self, countries: list[str] | None, hs4_codes: list[str] | None):
+        """
+        Write RCA_Cij_Summary.docx — a method section plus one RCA/Cij year table
+        per (reporter, HS4 heading), with the US and China partner columns merged.
+        Scope follows the same countries / hs4_codes filter as the Excel export.
+        Layout mirrors readings/RCA_Cij_Summary.docx.
+        """
+        from docx import Document
+
+        export_dir = Path(EXPORT_DIR)
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        china = self.hs4_index_by_partner.get('China')
+        us = self.hs4_index_by_partner.get('US')
+        if china is None or us is None:
+            self.logger.warning("Word summary skipped: need both China and US partner data.")
+            return
+
+        keep = ['Country', 'Year', 'HS4', 'TCI_DG_4digit',
+                'RCA_Export_4digit', 'RCA_Import_4digit']
+        china = china[keep].copy()
+        us = us[keep].copy()
+
+        if countries is not None:
+            china = china[china['Country'].isin(countries)]
+            us = us[us['Country'].isin(countries)]
+        if hs4_codes is not None:
+            china = china[china['HS4'].isin(hs4_codes)]
+            us = us[us['HS4'].isin(hs4_codes)]
+
+        merged = china.merge(
+            us, on=['Country', 'Year', 'HS4'], how='outer',
+            suffixes=('_CN', '_US'),
+        )
+
+        # RCA export is reporter-vs-world and partner-independent — sanity check.
+        both = merged.dropna(subset=['RCA_Export_4digit_CN', 'RCA_Export_4digit_US'])
+        if not both.empty:
+            max_gap = (both['RCA_Export_4digit_CN'] - both['RCA_Export_4digit_US']).abs().max()
+            if max_gap > 1e-6:
+                self.logger.warning(
+                    "RCA export differs across partners (max gap %.3g) — using China frame.",
+                    max_gap,
+                )
+
+        merged['Year'] = pd.to_numeric(merged['Year'], errors='coerce')
+        merged = merged.dropna(subset=['Year']).sort_values(['Country', 'HS4', 'Year'])
+
+        document = Document()
+
+        document.add_heading('RCA and Cij — Indo-Pacific reporters, US and China as partners, 2001–2024', level=0)
+
+        document.add_heading('Method', level=1)
+
+        document.add_heading('Variables', level=2)
+        variables = [
+            ('i',    "Reporter country (e.g. Korea, Vietnam)"),
+            ('j',    "Partner country (US or China)"),
+            ('k',    "An HS 6-digit product"),
+            ('K',    "An HS 4-digit heading (a group of HS6 products)"),
+            ('X_ik', "Country i's export of product k to the world"),
+            ('X_i',  "Country i's total exports to the world"),
+            ('M_jk', "Country j's import of product k from the world"),
+            ('M_j',  "Country j's total imports from the world"),
+            ('T_k',  "World total exports of product k"),
+            ('T',    "World total exports across all products"),
+        ]
+        var_table = document.add_table(rows=1, cols=2)
+        var_table.style = 'Light Grid Accent 1'
+        var_table.rows[0].cells[0].text = 'Symbol'
+        var_table.rows[0].cells[1].text = 'Meaning'
+        for symbol, meaning in variables:
+            row = var_table.add_row().cells
+            row[0].text = symbol
+            row[1].text = meaning
+        document.add_paragraph('All trade values in USD thousands. Source: ITC Trade Map.')
+
+        document.add_heading('Step 1 — Balassa RCA at HS6', level=2)
+        document.add_paragraph(
+            "How specialised is country i in exporting product k, compared with the world average?")
+        document.add_paragraph("RCA_export = (X_ik / X_i) ÷ (T_k / T)")
+        document.add_paragraph("And the same idea on the import side, for partner j:")
+        document.add_paragraph("RCA_import = (M_jk / M_j) ÷ (T_k / T)")
+        document.add_paragraph(
+            "Above 1 means specialised in that product, below 1 means under-specialised. (Balassa 1965)")
+
+        document.add_heading('Step 2 — Drysdale–Garnaut Cij at HS6', level=2)
+        document.add_paragraph(
+            "Do reporter i's exports of product k line up with partner j's imports of k?")
+        document.add_paragraph("Cij = (X_ik / X_i) × (M_jk / M_j) × (T / T_k)")
+        document.add_paragraph("Equivalently, using the two RCAs from Step 1:")
+        document.add_paragraph("Cij = RCA_export × RCA_import × (T_k / T)")
+        document.add_paragraph(
+            "Both forms are computed and verified equal as an internal check. "
+            "(Drysdale & Garnaut 1982)")
+
+        document.add_heading('Step 3 — Aggregate from HS6 up to HS4', level=2)
+        document.add_paragraph(
+            "RCA at HS4 is computed by adding up the trade values across all HS6 codes "
+            "inside the heading first, then applying the Balassa formula at the HS4 "
+            "level. So the formula is the same as Step 1, just with the heading-level "
+            "totals as inputs.")
+        document.add_paragraph(
+            "Cij at HS4 is the sum of all the HS6 Cij values inside the heading. "
+            "No second weighting:")
+        document.add_paragraph(
+            "Cij at HS4 (heading K) = sum of Cij(k) for every HS6 code k inside K")
+
+        document.add_heading('Step 4 — Interpretation', level=2)
+        document.add_paragraph(
+            "Cij above 1: reporter's export pattern matches partner's import pattern — "
+            "natural trading partners (Frankel, Stein & Wei 1995).")
+        document.add_paragraph("Cij near 1: world-average alignment.")
+        document.add_paragraph("Cij below 1: misalignment.")
+        document.add_paragraph(
+            "The index is unitless. It measures POTENTIAL complementarity, not "
+            "realised bilateral trade flows.")
+
+        def fmt(value, decimals):
+            if pd.isna(value):
+                return ''
+            return f"{value:.{decimals}f}"
+
+        table_count = 0
+        for reporter in sorted(merged['Country'].unique()):
+            document.add_heading(str(reporter), level=1)
+            reporter_rows = merged[merged['Country'] == reporter]
+
+            for hs4_code in sorted(reporter_rows['HS4'].unique()):
+                label = HS4_ICT_LABELS.get(hs4_code, '')
+                heading = f"{reporter} — HS {hs4_code}"
+                if label:
+                    heading += f" ({label})"
+                document.add_heading(heading, level=2)
+
+                year_rows = reporter_rows[reporter_rows['HS4'] == hs4_code].sort_values('Year')
+
+                table = document.add_table(rows=1, cols=6)
+                table.style = 'Light Grid Accent 1'
+                headers = ['Year', 'RCA export', 'RCA import (US)',
+                           'RCA import (CN)', 'Cij vs US', 'Cij vs CN']
+                for col, text in enumerate(headers):
+                    table.rows[0].cells[col].text = text
+
+                for _, year_row in year_rows.iterrows():
+                    rca_export = year_row['RCA_Export_4digit_CN']
+                    if pd.isna(rca_export):
+                        rca_export = year_row['RCA_Export_4digit_US']
+                    cells = table.add_row().cells
+                    cells[0].text = str(int(year_row['Year']))
+                    cells[1].text = fmt(rca_export, 3)
+                    cells[2].text = fmt(year_row['RCA_Import_4digit_US'], 3)
+                    cells[3].text = fmt(year_row['RCA_Import_4digit_CN'], 3)
+                    cells[4].text = fmt(year_row['TCI_DG_4digit_US'], 4)
+                    cells[5].text = fmt(year_row['TCI_DG_4digit_CN'], 4)
+
+                table_count += 1
+
+        output_path = export_dir / 'RCA_Cij_Summary.docx'
+        document.save(output_path)
+        self.logger.info(
+            "Exported %s (%d reporter-HS4 tables).", output_path, table_count,
+        )
