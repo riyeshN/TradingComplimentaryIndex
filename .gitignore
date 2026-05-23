@@ -52,3 +52,4 @@ data/TradeMapData/
 # Secrets / env
 .env*
 secrets.py
+CLAUDE.md

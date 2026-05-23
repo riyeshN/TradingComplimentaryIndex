@@ -6,6 +6,7 @@ import json
 from loadFiles.services.TCICalculator import TCICalculator
 from loadFiles.services.TradeMapLoader import TradeMapLoader
 from loadFiles.services.ComtradeDownload import ComtradeReferenceData, ComtradeTradeData
+from loadFiles.services.scope import SCOPES_BY_NAME
 
 # Create your views here.
 logger = logging.getLogger(__name__)
@@ -47,13 +48,30 @@ def calculate_tci(request):
 
     countries = None
     hs4_codes = None
+    scope_arg = "ict"
     if request.method == "POST":
         body = json.loads(request.body or b"{}")
         countries = body.get("countries") or None
         hs4_codes = body.get("hs4_codes") or None
+        scope_arg = body.get("scope") or "ict"
 
-    TCICalculator().run(countries=countries, hs4_codes=hs4_codes)
-    return JsonResponse({"status": "Success"}, status=200)
+    if scope_arg == "all":
+        scopes_to_run = list(SCOPES_BY_NAME.values())
+    else:
+        if scope_arg not in SCOPES_BY_NAME:
+            return JsonResponse(
+                {"status": "Error", "message": f"unknown scope '{scope_arg}'; expected one of "
+                                               f"{list(SCOPES_BY_NAME) + ['all']}"},
+                status=400,
+            )
+        scopes_to_run = [SCOPES_BY_NAME[scope_arg]]
+
+    for scope in scopes_to_run:
+        TCICalculator(scope=scope).run(countries=countries, hs4_codes=hs4_codes)
+    return JsonResponse(
+        {"status": "Success", "scopes_run": [s.name for s in scopes_to_run]},
+        status=200,
+    )
 
 def load_trade_data_to_db(request):
     if request.method == "GET":

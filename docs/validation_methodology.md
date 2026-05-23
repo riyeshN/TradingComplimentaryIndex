@@ -148,7 +148,32 @@ $$
 
 The columns must agree by construction. A divergence indicates an implementation bug (NaN handling, divide-by-zero, dataflow regression). The check does **not** validate methodology or data — those rest on §1 and §2.
 
-**Tan Fen (2024) variant — not implemented.** $C_{k}^{\,\mathrm{Tan}} = \mathrm{RCA}_{x} \cdot \mathrm{RCA}_{m}$, no world-share factor. Differs from DG by $W/W_{k}$ — niche products score larger. Recorded for completeness; suited to single-product analysis.
+**Unweighted RCA product (`TCI_RCA_Product`).** $\mathrm{RCA}_{x} \cdot \mathrm{RCA}_{m}$, no world-share factor. Differs from DG by $W/W_{k}$. Reported alongside DG at every tier; this is the per-product index published by Yang (2023, Table 3).
+
+### Partner-side and reporter-side RCA invariants
+
+Up to eight invariants are enforced at pipeline time by
+`TCICalculator._verify_partner_invariants()` and re-tested by
+`loadFiles.tests.PartnerInvariantsTest`. Four apply to both scopes (A–D);
+four additional checks (E–H) are run when the pipeline aggregates to HS2
+(strategic scope). Each must hold by definition of Balassa RCA or by tier
+additivity; a violation aborts the pipeline before any output file is
+written and breaks the corresponding test case.
+
+| # | Invariant | Scopes | Tolerance |
+|---|---|---|---|
+| A | HS 6-digit `RCA Reporter Export` is identical across the China and US partner frames for matching `(Country, Year, Product code)`. | ICT, Strategic | $10^{-9}$ |
+| B | HS 6-digit `TCI_Drysdale_Garnaut == TCI_RCA_DG_Decomposition` (algebraic equality of two independent code paths). | ICT, Strategic | $10^{-9}$ |
+| C | HS 4-digit `RCA_Export_4digit` is identical across partner frames for matching `(Country, Year, HS4)`. | ICT, Strategic | $10^{-9}$ |
+| D | HS 4-digit `RCA_Import_4digit` is identical across reporters within each partner frame for matching `(Year, HS4)` — partner imports are partner-vs-world and must not depend on the reporter. | ICT, Strategic | $10^{-9}$ |
+| E | HS 2-digit `RCA_Export_2digit` is identical across partner frames for matching `(Country, Year, HS2)`. | Strategic | $10^{-9}$ |
+| F | HS 2-digit `RCA_Import_2digit` is identical across reporters within each partner frame for matching `(Year, HS2)`. | Strategic | $10^{-9}$ |
+| G | Tier additivity: `TCI_DG_2digit == sum of TCI_DG_4digit` over HS4 codes within the HS2 chapter. | Strategic | $10^{-9}$ |
+| H | Tier additivity: `Headline_Cij_DG == sum of TCI_DG_2digit` over scope per (Country, Year). | Strategic | $10^{-9}$ |
+
+```bash
+conda run -n Econometrics_Deps python manage.py test loadFiles.tests.PartnerInvariantsTest
+```
 
 ---
 
@@ -163,6 +188,48 @@ The columns must agree by construction. A divergence indicates an implementation
 | 2b | Japan | 2022 | — | 5 (HS 8542) | $r = 0.989$ | Same 854239 pattern |
 
 All passing. HS6 layer validated.
+
+---
+
+## 4 — External Cross-Validation (Yang 2023)
+
+Yang (2023) Table 3 reports Cij for China (exporter) vs the CEE country group
+(importer, aggregated) by SITC Rev.4 section, 2010–2021. Reproduced with the
+`china`/`CCE` data (`china_CCE.txt`) and the `HSSITCConcordance` HS6→SITC
+mapping:
+
+```bash
+# Vintage-aware concordance — load once per HS edition (xlrd needed for .xls):
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv "data/reference_data/UN Comtrade Conversion table HS2007 to SITCRev4.xls" --revision 2007
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv "data/reference_data/HS 2012 to SITC Rev.4 Correlation and conversion tables.xls" --revision 2012
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv data/reference_data/HS2017toSITC4ConversionAndCorrelationTables.xlsx --revision 2017
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv data/reference_data/HS2022toSITC4ConversionAndCorrelationTables.xlsx --revision 2022
+conda run -n Econometrics_Deps python manage.py build_cee_aggregate   # CEE = sum of Yang's exact 17 countries
+conda run -n Econometrics_Deps python manage.py validate_against_yang
+```
+
+Per-section index = `RCA_x_section × RCA_m_section` (Balassa on section totals,
+no weight). Result: **66% of 120 cells within 25%**; manufactured-goods
+sections SITC5 (chemicals) and SITC6 reproduce Yang to **2–3%**; direction and
+rank order match across all ten sections. The CEE importer is reconstructed as
+the sum of Yang's exact 17 countries (`build_cee_aggregate`) and HS6→SITC mapping
+is **vintage-aware** (each year mapped through the HS edition in force that year;
+0.06% of trade value unmapped, down from 6%).
+
+Primary-product sections (SITC0–4) still run ~½ of Yang. **All three data
+hypotheses for that gap are ruled out**: HS→SITC mapping (gap unmoved after
+coverage reached 99.94%), CEE country set (rebuilt to Yang's exact 17), and data
+source — CEE commodity imports were measured directly against the free UN
+Comtrade API (fuel chapter HS27, 2021) and **match TradeMap** wherever Comtrade
+exposes a clean aggregate (Poland/Hungary/Bulgaria ratio ≈1.00; the few
+mismatches have Comtrade *below* TradeMap, free-preview aggregation gaps, not
+TradeMap understating). With China-export, world, and CEE-import figures all
+verified correct, the pipeline's primary RCAs are correct and Yang's published
+primary Cij are not reconstructible from real trade data (they would require
+physically impossible import shares — e.g. CEE importing fuel at ~29% of its
+basket). The residual is therefore **Yang-side** — SITC classification
+(native-SITC reporting vs HS→SITC) or RCA computation — not our index. Full
+discussion: [`yang_validation.md`](yang_validation.md).
 
 ---
 
@@ -239,13 +306,13 @@ $$
 
 are **not** algebraically equal. The first reduces to a sum of products $\sum X_{i,k} M_{j,k}$; the second reduces to a product of sums $(\sum X_{i,k})(\sum M_{j,k})$. The second form records a heading as complementary whenever both the reporter and the partner trade *some* HS 6-digit code under that heading, even when they trade *different* codes. The sum-of-products form counts only the HS 6-digit lines where both sides have non-zero world flows of the same product. Because Drysdale-Garnaut Cij is fundamentally about product-level alignment, this pipeline uses the sum-of-products form.
 
-**Tan Fen (2024) variant — secondary, for sensitivity comparison:**
+**Unweighted RCA product (`TCI_RCA_Product`) — secondary:**
 
 $$
-C_{K}^{\,\mathrm{Tan}} \;=\; \sum_{k \in K} \mathrm{RCA}_{x,i,k} \cdot \mathrm{RCA}_{m,j,k}
+C_{K}^{\,\mathrm{RCA}} \;=\; \mathrm{RCA}_{x,i,K} \cdot \mathrm{RCA}_{m,j,K}
 $$
 
-Differs from the Drysdale-Garnaut form by the absence of the $W/W_{k}$ factor inside the sum.
+Tier-level Balassa RCAs multiplied, no world-share weight. The per-product index published by Yang (2023, Table 3); reported beside the DG form so the convention can be chosen downstream.
 
 **Auxiliary HS 4-digit RCA values.** The Stage 2 outputs $\mathrm{RCA}_{x,i,K}$ and $\mathrm{RCA}_{m,j,K}$ are exported as their own columns to describe heading-level specialisation. They are not consumed in the computation of $C_{ij,K}$.
 
@@ -257,4 +324,4 @@ Cij as defined here measures **potential** bilateral complementarity — the ali
 
 ## Scope
 
-This document covers the HS 6-digit and HS 4-digit calculation layers. The choice of Drysdale-Garnaut versus Tan Fen at the HS 4-digit level, and the policy interpretation of resulting values, are the subject of separate methodological review.
+This document covers the HS 6-digit and HS 4-digit calculation layers. The choice of weighted Drysdale-Garnaut versus the unweighted RCA product, and the policy interpretation of resulting values, are the subject of separate methodological review.

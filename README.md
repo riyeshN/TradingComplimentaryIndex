@@ -61,19 +61,19 @@ $$
 
 Algebraically identical to the single-term DG above; included as an internal consistency check.
 
-### Tan Fen (2024) variant — reported, not primary
+### Unweighted RCA product — reported alongside, not primary
 
 $$
-C_{k}^{\,\mathrm{Tan}} \;=\; \mathrm{RCA}_{x,i,k} \cdot \mathrm{RCA}_{m,j,k}
+C_{k}^{\,\mathrm{RCA}} \;=\; \mathrm{RCA}_{x,i,k} \cdot \mathrm{RCA}_{m,j,k}
 $$
 
-Drops the world-trade-share factor $T_{k}/T$. Larger for niche products. Suited to product-by-product comparisons. **Not algebraically equivalent to Drysdale-Garnaut** — the two differ by a factor of $T/T_{k}$:
+Drops the world-trade-share factor $T_{k}/T$. **Not algebraically equivalent to Drysdale-Garnaut** — the two differ by a factor of $T/T_{k}$:
 
 $$
-C_{k}^{\,\mathrm{Tan}} \;=\; C_{ij,k}^{\,\mathrm{DG}} \cdot \frac{T}{T_{k}}
+C_{k}^{\,\mathrm{RCA}} \;=\; C_{ij,k}^{\,\mathrm{DG}} \cdot \frac{T}{T_{k}}
 $$
 
-> **Relationship to the Yang (2023) and Fen (2024) RCA-product form.** The Tan Fen single-product index $C_{k}^{\,\mathrm{Tan}} = \mathrm{RCA}_{x,i,k} \cdot \mathrm{RCA}_{m,j,k}$ is **not** algebraically equivalent to the Drysdale-Garnaut definition. Step-by-step derivation showing the $T/T_{k}$ factor difference is recorded in [`readings/formula.pdf`](readings/formula.pdf). The pipeline reports both forms; the Drysdale-Garnaut form is used as the primary index following the original 1982 definition, and the Tan Fen form is reported alongside for product-level comparisons.
+> This is the per-product index published by Yang (2023, Table 3) — Balassa RCAs multiplied with no world-share weight. The pipeline reports it as `TCI_RCA_Product` alongside the weighted Drysdale-Garnaut form (`TCI_Drysdale_Garnaut`, the primary). Step-by-step derivation of the $T/T_{k}$ difference: [`readings/formula.pdf`](readings/formula.pdf).
 
 ---
 
@@ -128,46 +128,86 @@ The headline sum runs over all HS 6-digit commodities in the analysis scope (the
 >
 > The product-of-RCAs form reports complementarity in both cases. The sum-of-HS6 form reports zero where there is no HS 6-digit overlap. Because Drysdale-Garnaut Cij is fundamentally about product-level alignment, this pipeline uses the sum-of-HS6 form. HS 4-digit RCAs are still exported as standalone heading-level specialisation metrics.
 
-**Tan Fen variant at the HS 4-digit level**
-
-$$
-C_{K}^{\,\mathrm{Tan}} \;=\; \sum_{k \in K} \mathrm{RCA}_{x,i,k} \cdot \mathrm{RCA}_{m,j,k}
-$$
-
-Reported alongside the Drysdale-Garnaut form for sensitivity comparison; not used as the headline.
-
 **Auxiliary HS 4-digit RCA values.** $\mathrm{RCA}_{x,i,K}$ and $\mathrm{RCA}_{m,j,K}$ from Stage 2 are exported as their own columns to describe heading-level specialisation. They are not used to compute HS 4-digit Cij.
 
 ---
 
 ## Output Files
 
-All exports live in `data/TradeMapData/export/`.
+The pipeline supports two scopes; each writes to its own subdirectory under
+`data/TradeMapData/export/`.
+
+```
+data/TradeMapData/export/
+├── ict/        # Part II — UNCTAD ICT scope (HS4 primary tier)
+└── strategic/  # Part I — JIE strategic chapters (HS2 primary tier)
+```
+
+### Part II — `ict/` (Country, HS4, HS6 tiers)
 
 | File | Sheet | Granularity | Primary columns |
 |---|---|---|---|
-| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | `Headline_Cij_Drysdale_Garnaut`, `Headline_Cij_Tan_Fen`, `Active_HS6_Pairs` |
-| `{partner}_TCI.xlsx` | `HS4 Summary` | Reporter × Year × HS4 | `TCI_Drysdale_Garnaut` (sum of HS6), `TCI_Tan_Fen` (sum of HS6), `RCA_Reporter_Export`, `RCA_Partner_Import`, raw totals, `Active_HS6_Pairs` |
-| `{partner}_TCI.xlsx` | `HS6 Detail` | Reporter × Year × HS6 | `TCI_Drysdale_Garnaut`, `TCI_RCA_DG_Decomposition` (cross-check), `TCI_Tan_Fen`, `RCA_Reporter_Export`, `RCA_Partner_Import`, `Proportion_World_Trade`, `World_Share_Within_HS4`, all raw flows |
-| `{partner}_{HS4}_TCI_DG.png` | — | Time series | HS4 DG Cij per reporter |
+| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | `Headline_Cij_Drysdale_Garnaut` (weighted), `Headline_Cij_RCA_Product` (unweighted), `Active_HS6_Pairs` |
+| `{partner}_TCI.xlsx` | `HS4 Summary` | Reporter × Year × HS4 | `TCI_Drysdale_Garnaut` (weighted, sum of HS6), `TCI_RCA_Product` (unweighted RCA_x×RCA_m — Yang published form), `RCA_Reporter_Export`, `RCA_Partner_Import`, raw totals, `Active_HS6_Pairs` |
+| `{partner}_TCI.xlsx` | `HS6 Detail` | Reporter × Year × HS6 | `TCI_Drysdale_Garnaut`, `TCI_RCA_DG_Decomposition` (cross-check), `RCA_Reporter_Export`, `RCA_Partner_Import`, `Proportion_World_Trade`, all raw flows |
+| `{partner}_{HS4}_TCI_DG.png` | — | Time series | HS4 DG Cij per reporter (23 × 2 = 46 PNGs) |
+| `RCA_Cij_Summary.docx` | — | Reporter × HS4 | Method section + one RCA/Cij year table per (reporter, HS4), US and China columns merged |
 
-The `hs4_codes` filter applies to the HS4 and HS6 sheets only — the `Country Summary` sheet always reports the full ICT-scope headline regardless of HS4 subset, so the headline number is comparable across runs.
+### Part I — `strategic/` (Country, HS2, HS4, HS6 tiers)
+
+| File | Sheet | Granularity | Notes |
+|---|---|---|---|
+| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | Headline DG + RCA-product Cij over strategic scope |
+| `{partner}_TCI.xlsx` | `HS2 Summary` | Reporter × Year × HS2 chapter | DG + RCA-product Cij at chapter; HS2 RCA from canonical totals |
+| `{partner}_TCI.xlsx` | `HS4 Summary` | Reporter × Year × HS4 | Same schema as ICT scope; full HS4 detail inside strategic chapters |
+| `{partner}_TCI.xlsx` | `HS6 Detail` | Reporter × Year × HS6 | Full HS6 audit (large file: ~100MB) |
+| `{partner}_{HS2}_TCI_DG.png` | — | Time series | HS2 DG Cij per reporter (10 × 2 = 20 PNGs) |
+| `RCA_Cij_Summary.docx` | — | Reporter × HS2 | Method section + one RCA/Cij year table per (reporter, HS2 chapter) |
+
+The `hs4_codes` filter applies to the HS-tier and HS6 sheets only — the `Country Summary` sheet always reports the full scope headline regardless of subset.
+
+`RCA_Cij_Summary.docx` requires `python-docx` (`conda run -n Econometrics_Deps pip install python-docx`).
 
 ### How to run
 
 ```bash
-# Full ICT scope, all reporters, all years
+# Default: ICT scope, all reporters, all years
 conda run -n Econometrics_Deps python manage.py shell -c "from loadFiles.services.TCICalculator import TCICalculator; TCICalculator().run()"
+
+# Strategic scope (Part I)
+conda run -n Econometrics_Deps python manage.py shell -c "from loadFiles.services.TCICalculator import TCICalculator; from loadFiles.services.scope import SCOPE_STRATEGIC; TCICalculator(scope=SCOPE_STRATEGIC).run()"
 
 # Filtered (HS4 and HS6 sheets only; headline still full scope)
 conda run -n Econometrics_Deps python manage.py shell -c "from loadFiles.services.TCICalculator import TCICalculator; TCICalculator().run(countries=['Vietnam','KoreaRepublic'], hs4_codes=['8542','8541'])"
 
-# Or via HTTP endpoint
+# HTTP endpoint — scope chooses subdir; "all" runs both
 conda run -n Econometrics_Deps python manage.py runserver
-curl -X POST http://localhost:8000/loadFiles/calculate_tci
+curl -X POST http://localhost:8000/loadFiles/calculate_tci -H "Content-Type: application/json" -d '{"scope":"all"}'
 ```
 
 The database must be loaded first via `TradeMapLoader().load()` or the `GET /loadFiles/load_trade_data_to_db` endpoint.
+
+### Yang (2023) validation
+
+The HS→SITC concordance is **vintage-aware**: load one UN correspondence file
+per HS edition (each year's HS6 is mapped through the edition in force that
+year). `xlrd` is required for the legacy `.xls` files (`pip install xlrd`).
+
+```bash
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv "data/reference_data/UN Comtrade Conversion table HS2007 to SITCRev4.xls" --revision 2007
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv "data/reference_data/HS 2012 to SITC Rev.4 Correlation and conversion tables.xls" --revision 2012
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv data/reference_data/HS2017toSITC4ConversionAndCorrelationTables.xlsx --revision 2017
+conda run -n Econometrics_Deps python manage.py load_hs_sitc_concordance --csv data/reference_data/HS2022toSITC4ConversionAndCorrelationTables.xlsx --revision 2022
+conda run -n Econometrics_Deps python manage.py validate_against_yang
+```
+
+The CEE importer is reconstructed as the sum of Yang's exact 17 countries (one TradeMap file each in `data/TradeMapData/cee_countries/`), not TradeMap's opaque "CEE" aggregate:
+
+```bash
+conda run -n Econometrics_Deps python manage.py build_cee_aggregate
+```
+
+Writes [`docs/yang_validation.csv`](docs/yang_validation.csv); see [`docs/yang_validation.md`](docs/yang_validation.md) for the discussion. With vintage-aware mapping (0.06% unmapped) and Yang's exact 17-country CEE group, 66% of cells fall within 25% and manufactured SITC5/6 within 2–3%. The residual primary-section gap survives every data fix: mapping, country set, **and data source** (CEE commodity imports verified equal to Comtrade) are all ruled out, so the pipeline's primary RCAs are correct and the gap is Yang-side (SITC classification / RCA computation), not our index.
 
 ---
 

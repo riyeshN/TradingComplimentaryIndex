@@ -155,19 +155,20 @@ share of world trade *within its parent HS 4-digit heading*. Algebraically ident
 applying the Balassa formula to HS 4-digit totals. Reported as a heading-level
 specialisation summary; not used in the calculation of $C_{ij,K}$.
 
-### 5.6 Tan Fen (2024) variant — secondary
+### 5.6 Unweighted RCA product — secondary
 
-Tan (2024) reports a related single-product index without the world-trade-share factor:
+The pipeline also reports the tier-level Balassa RCA product without the
+world-trade-share factor:
 
 $$
-C_{k}^{\,\mathrm{Tan}} \;=\; \mathrm{RCA}_{x,i,k} \cdot \mathrm{RCA}_{m,j,k}
+C_{K}^{\,\mathrm{RCA}} \;=\; \mathrm{RCA}_{x,i,K} \cdot \mathrm{RCA}_{m,j,K}
 $$
 
 This is **not** algebraically equivalent to Drysdale-Garnaut — the two differ by the
-factor $T/T_{k}$. The Tan Fen form gives larger values for niche, low-world-trade
-products (small $T_{k}$). It is reported alongside the Drysdale-Garnaut form at every
-level (HS 6-digit, HS 4-digit, and headline) for sensitivity comparison, but the
-Drysdale-Garnaut form is the primary index following the original 1982 definition.
+factor $T/T_{K}$. It is the per-product index published by Yang (2023, Table 3) and
+is reported as `TCI_RCA_Product` alongside the weighted Drysdale-Garnaut form at every
+tier so the convention can be chosen downstream. Drysdale-Garnaut remains the primary
+index, following the original 1982 definition.
 
 A step-by-step derivation of why the two forms diverge is in
 [`readings/formula.pdf`](../readings/formula.pdf).
@@ -203,7 +204,7 @@ sheets in a single Excel workbook `{partner}_TCI.xlsx`:
 
 | Sheet | Granularity | Key columns |
 |---|---|---|
-| Country Summary | Reporter $\times$ Year | Headline Cij (Drysdale-Garnaut), Headline Cij (Tan Fen), count of active HS 6-digit pairs |
+| Country Summary | Reporter $\times$ Year | Headline Cij (Drysdale-Garnaut, weighted), Headline Cij (RCA product, unweighted), count of active HS 6-digit pairs |
 | HS4 Summary | Reporter $\times$ Year $\times$ HS 4-digit heading | $C_{ij,K}$ (DG), $C_{ij,K}^{\mathrm{Tan}}$, $\mathrm{RCA}_{x,i,K}$, $\mathrm{RCA}_{m,j,K}$, raw HS 4-digit totals, count of active HS 6-digit pairs |
 | HS6 Detail | Reporter $\times$ Year $\times$ HS 6-digit code | $C_{ij,k}$ (DG), $C_{ij,k}^{\mathrm{Tan}}$, both RCAs, all underlying trade values, world share within HS 4-digit |
 

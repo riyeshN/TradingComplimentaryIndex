@@ -23,7 +23,7 @@ class RCAFormulaValidationTest(TestCase):
     def _load_pipeline_rca(self, db_reporter: str, year: int) -> pd.DataFrame:
         calculator = TCICalculator()
         calculator._load_from_db()
-        calculator._filter_by_ict_scope_and_year()
+        calculator._filter_by_scope_and_year()
         calculator._calculate_tci_drysdale_garnaut()
         calculator._calculate_rca_and_tci_rca()
 
