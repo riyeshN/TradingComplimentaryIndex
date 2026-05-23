@@ -22,17 +22,19 @@ from ._filter import filter_scope
 COUNTRY_SUMMARY_COLUMNS = {
     'Country':                  'Country',
     'Year':                     'Year',
-    'Headline_Cij_DG':          'Headline_Cij_Drysdale_Garnaut',
-    'Headline_Cij_RCA_Product': 'Headline_Cij_RCA_Product',
-    'Num_Active_HS6_Pairs':     'Active_HS6_Pairs',
+    'Headline_Cij_DG':             'Headline_Cij_Drysdale_Garnaut',
+    'Headline_Cij_DG_WeightedAvg': 'Headline_Cij_DG_WeightedAvg',
+    'Headline_Cij_RCA_Product':    'Headline_Cij_RCA_Product',
+    'Num_Active_HS6_Pairs':        'Active_HS6_Pairs',
 }
 
 HS4_SUMMARY_COLUMNS = {
     'Country':                'Country',
     'Year':                   'Year',
     'HS4':                    'HS4',
-    'TCI_DG_4digit':          'TCI_Drysdale_Garnaut',
-    'TCI_RCA_Product_4digit': 'TCI_RCA_Product',
+    'TCI_DG_4digit':             'TCI_Drysdale_Garnaut',
+    'TCI_DG_WeightedAvg_4digit': 'TCI_DG_WeightedAvg',
+    'TCI_RCA_Product_4digit':    'TCI_RCA_Product',
     'RCA_Export_4digit':      'RCA_Reporter_Export',
     'RCA_Import_4digit':      'RCA_Partner_Import',
     'Total_Reporter_Export':  'Total_Reporter_Export_USD_thousands',
@@ -45,8 +47,9 @@ HS2_SUMMARY_COLUMNS = {
     'Country':                'Country',
     'Year':                   'Year',
     'HS2':                    'HS2',
-    'TCI_DG_2digit':          'TCI_Drysdale_Garnaut',
-    'TCI_RCA_Product_2digit': 'TCI_RCA_Product',
+    'TCI_DG_2digit':             'TCI_Drysdale_Garnaut',
+    'TCI_DG_WeightedAvg_2digit': 'TCI_DG_WeightedAvg',
+    'TCI_RCA_Product_2digit':    'TCI_RCA_Product',
     'RCA_Export_2digit':      'RCA_Reporter_Export',
     'RCA_Import_2digit':      'RCA_Partner_Import',
     'Total_Reporter_Export':  'Total_Reporter_Export_USD_thousands',
@@ -59,8 +62,9 @@ SITC_SUMMARY_COLUMNS = {
     'Country':                'Country',
     'Year':                   'Year',
     'SITC':                   'SITC_Section',
-    'TCI_DG_sitc':            'TCI_Drysdale_Garnaut',
-    'TCI_RCA_Product_sitc':   'TCI_RCA_Product',
+    'TCI_DG_sitc':             'TCI_Drysdale_Garnaut',
+    'TCI_DG_WeightedAvg_sitc': 'TCI_DG_WeightedAvg',
+    'TCI_RCA_Product_sitc':    'TCI_RCA_Product',
     'RCA_Export_sitc':        'RCA_Reporter_Export',
     'RCA_Import_sitc':        'RCA_Partner_Import',
     'Num_Active_HS6_Pairs':   'Active_HS6_Pairs',
@@ -86,6 +90,18 @@ HS6_DETAIL_COLUMNS = {
     'RCA Partner Import':               'RCA_Partner_Import',
     'Proportion World Trade':           'Proportion_World_Trade',
     'Active_Pair':                      'Active_Pair',
+}
+
+
+# World-trade denominators behind every Cij, deduplicated to one row per
+# (HS6, year). T_k / T_K / T are reporter- and partner-independent.
+WORLD_REFERENCE_COLUMNS = {
+    'Product code':           'Product_Code',
+    'Product label':          'Product_Label',
+    'Year':                   'Year',
+    'World Export of item k': 'World_Export_HS6_Tk_USD_thousands',     # T_k
+    'World Export HS4 Total': 'World_Export_HS4_Total_USD_thousands',  # T_K (heading)
+    'Total World Export':     'Total_World_Export_T_USD_thousands',    # T
 }
 
 
@@ -162,6 +178,21 @@ def export_excel(
                 .reset_index(drop=True)
             )
 
+        # World Reference (T, T_k) — from the UNFILTERED frame so the reference is
+        # always complete; deduplicated to one row per (HS6, year).
+        world_reference = (
+            hs6_with_indicators_by_partner[partner_name]
+            .drop_duplicates(['Product code', 'Year'])
+            [list(WORLD_REFERENCE_COLUMNS.keys())]
+            .rename(columns=WORLD_REFERENCE_COLUMNS)
+            .sort_values(['Product_Code', 'Year'])
+            .reset_index(drop=True)
+        )
+        world_reference['Share_Tk_over_T_pct'] = (
+            100 * world_reference['World_Export_HS6_Tk_USD_thousands']
+            / world_reference['Total_World_Export_T_USD_thousands'].replace(0, pd.NA)
+        )
+
         output_path = export_dir / f"{partner_name}_TCI.xlsx"
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             country_sheet.to_excel(writer, sheet_name='Country Summary', index=False)
@@ -171,11 +202,13 @@ def export_excel(
                 hs2_sheet.to_excel(writer, sheet_name='HS2 Summary', index=False)
             hs4_sheet.to_excel(writer, sheet_name='HS4 Summary', index=False)
             hs6_sheet.to_excel(writer, sheet_name='HS6 Detail', index=False)
+            world_reference.to_excel(writer, sheet_name='World Reference', index=False)
 
         sheet_summary = (
             f"{len(country_sheet)} country-year, "
             + (f"{len(sitc_sheet)} SITC, " if sitc_sheet is not None else "")
             + (f"{len(hs2_sheet)} HS2, " if hs2_sheet is not None else "")
-            + f"{len(hs4_sheet)} HS4, {len(hs6_sheet)} HS6"
+            + f"{len(hs4_sheet)} HS4, {len(hs6_sheet)} HS6, "
+            + f"{len(world_reference)} world-ref"
         )
         log.info("Exported %s (%s).", output_path, sheet_summary)

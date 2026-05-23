@@ -1,12 +1,12 @@
 """
 RCA_Cij_Summary.docx generation.
 
-Produces a Word document with a method section (variables table and Steps 1-4)
+Produces a Word document with a method section (variables table and Steps 1-3)
 followed by one RCA/Cij year table per (reporter, primary-tier code), with the
 US and China partner columns merged side by side. The method section adapts to
 the scope's aggregation tier (HS4 heading / HS2 chapter / SITC section). Each
-table reports both Cij forms — DG weighted and RCA-product unweighted — for both
-partners. Layout mirrors readings/RCA_Cij_Summary.docx.
+table reports three Cij forms per partner — DG sum, DG weighted-average, and
+unweighted RCA product. Layout mirrors readings/RCA_Cij_Summary.docx.
 """
 
 from __future__ import annotations
@@ -47,6 +47,30 @@ def _tier_vocabulary(tier_column: str) -> tuple[str, str, str]:
     }.get(tier_column, ('HS4', 'heading', "An HS 4-digit heading (a group of HS6 products)"))
 
 
+def _apply_page_layout(document) -> None:
+    """Landscape + narrow margins so the wide multi-Cij tables have room."""
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Inches
+    section = document.sections[0]
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    section.left_margin = section.right_margin = Inches(0.4)
+    section.top_margin = section.bottom_margin = Inches(0.5)
+
+
+def _style_table(table, header_pt: float = 8.5, body_pt: float = 8.5) -> None:
+    """Bold the header row and shrink the font so many columns fit on the page."""
+    from docx.shared import Pt
+    for row_index, row in enumerate(table.rows):
+        is_header = row_index == 0
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(header_pt if is_header else body_pt)
+                    if is_header:
+                        run.font.bold = True
+
+
 def _format_number(value, decimals: int) -> str:
     if pd.isna(value):
         return ''
@@ -59,12 +83,13 @@ def _normalise_tier_frame(frame: pd.DataFrame, tier_column: str) -> pd.DataFrame
     (`_sitc`) suffixes."""
     suffix = tier_suffix(tier_column)
     return frame.rename(columns={
-        f'TCI_DG_{suffix}':          'TCI_DG',
-        f'TCI_RCA_Product_{suffix}': 'TCI_RCA_Product',
-        f'RCA_Export_{suffix}':      'RCA_Export',
-        f'RCA_Import_{suffix}':      'RCA_Import',
+        f'TCI_DG_{suffix}':            'TCI_DG',
+        f'TCI_DG_WeightedAvg_{suffix}':'TCI_DG_WeightedAvg',
+        f'TCI_RCA_Product_{suffix}':   'TCI_RCA_Product',
+        f'RCA_Export_{suffix}':        'RCA_Export',
+        f'RCA_Import_{suffix}':        'RCA_Import',
     })[['Country', 'Year', tier_column,
-        'TCI_DG', 'TCI_RCA_Product', 'RCA_Export', 'RCA_Import']]
+        'TCI_DG', 'TCI_DG_WeightedAvg', 'TCI_RCA_Product', 'RCA_Export', 'RCA_Import']]
 
 
 def _merge_partner_frames(
@@ -117,10 +142,7 @@ def _add_method_section(document, tier_column: str = 'HS4') -> None:
     document.add_paragraph(
         "How specialised is country i in exporting product k, compared with the world average?")
     document.add_paragraph("RCA_export = (X_ik / X_i) ÷ (T_k / T)")
-    document.add_paragraph("And the same idea on the import side, for partner j:")
     document.add_paragraph("RCA_import = (M_jk / M_j) ÷ (T_k / T)")
-    document.add_paragraph(
-        "Above 1 means specialised in that product, below 1 means under-specialised. (Balassa 1965)")
 
     document.add_heading('Step 2 — Drysdale–Garnaut Cij at HS6', level=2)
     document.add_paragraph(
@@ -128,9 +150,6 @@ def _add_method_section(document, tier_column: str = 'HS4') -> None:
     document.add_paragraph("Cij = (X_ik / X_i) × (M_jk / M_j) × (T / T_k)")
     document.add_paragraph("Equivalently, using the two RCAs from Step 1:")
     document.add_paragraph("Cij = RCA_export × RCA_import × (T_k / T)")
-    document.add_paragraph(
-        "Both forms are computed and verified equal as an internal check. "
-        "(Drysdale & Garnaut 1982)")
 
     document.add_heading(f'Step 3 — Aggregate from HS6 up to {tier_label}', level=2)
     document.add_paragraph(
@@ -144,26 +163,24 @@ def _add_method_section(document, tier_column: str = 'HS4') -> None:
     document.add_paragraph(
         f"Cij at {tier_label} ({tier_noun} K) = sum of Cij(k) for every HS6 code k inside K")
     document.add_paragraph(
-        "Two tier-level Cij forms are reported side by side so the convention "
-        "can be chosen downstream:")
+        "Column key — three tier-level Cij forms are reported side by side (each "
+        "shown for the US and for China):")
     document.add_paragraph(
-        "  • Cij DG (weighted) — the sum of HS6 Drysdale–Garnaut values above, "
-        "carrying the world-share weight (T_k / T). Equals Yang's comprehensive "
-        "aggregate.")
+        "  • \"Cij sum\" — the sum of HS6 Drysdale–Garnaut values above, each "
+        "carrying its own world-share weight (T_k / T). Additive: sums to the "
+        "headline index, equals Yang's comprehensive aggregate.")
     document.add_paragraph(
-        f"  • Cij RCA-product (unweighted) — the {tier_noun}-level RCA_export × "
-        "RCA_import, with no world-share weight. The per-product index published "
-        "by Yang (2023, Table 3).")
-
-    document.add_heading('Step 4 — Interpretation', level=2)
+        f"  • \"Cij wtd-avg\" — the world-trade-share weighted mean of the "
+        f"per-product complementarities: Σ_k (T_k / T_K) × RCA_export_k × "
+        f"RCA_import_k, where T_K is the {tier_noun}-level world total and the "
+        f"weights T_k/T_K sum to 1. Equivalently the DG sum scaled by T/T_K. "
+        f"Same scale as an HS6 Cij, so it is comparable across {tier_noun}s; "
+        f"not additive to the headline.")
     document.add_paragraph(
-        "Cij above 1: reporter's export pattern matches partner's import pattern — "
-        "natural trading partners (Frankel, Stein & Wei 1995).")
-    document.add_paragraph("Cij near 1: world-average alignment.")
-    document.add_paragraph("Cij below 1: misalignment.")
-    document.add_paragraph(
-        "The index is unitless. It measures POTENTIAL complementarity, not "
-        "realised bilateral trade flows.")
+        f"  • \"Cij RCA×RCA\" — the {tier_noun}-level RCA_export × RCA_import, "
+        "with no world-share weight (an unweighted product of the two "
+        "specialisation ratios). The per-product index published by Yang "
+        "(2023, Table 3).")
 
     document.add_heading('Data notes', level=2)
     document.add_paragraph(
@@ -175,12 +192,12 @@ def _add_method_section(document, tier_column: str = 'HS4') -> None:
         "advantage ratios; those years are excluded so the 8524 series reflects a "
         "single, current product definition.")
     document.add_paragraph(
-        "Two Cij forms are reported. The weighted Drysdale–Garnaut form is bounded "
-        "and is the recommended headline measure. The unweighted RCA-product form "
-        "(matching Yang 2023) is the product of two specialisation ratios and can "
-        "take large values when both the reporter and the partner are highly "
-        "specialised in a narrow, high-value heading; such values are genuine, not "
-        "errors.")
+        "Each table reports three Cij columns per partner: the DG-sum (additive, "
+        "headline-consistent; recommended primary), the DG weighted-average "
+        "(same scale across headings; not additive), and the unweighted "
+        "RCA-product (matching Yang 2023). The RCA-product can take large values "
+        "when both the reporter and partner are highly specialised in a narrow "
+        "high-value heading; such values are genuine, not errors.")
 
 
 def _add_reporter_tier_table(
@@ -192,11 +209,15 @@ def _add_reporter_tier_table(
         heading += f" ({label})"
     document.add_heading(heading, level=2)
 
-    table = document.add_table(rows=1, cols=8)
+    table = document.add_table(rows=1, cols=10)
     table.style = 'Light Grid Accent 1'
-    headers = ['Year', 'RCA export', 'RCA import (US)', 'RCA import (CN)',
-               'Cij DG vs US', 'Cij DG vs CN',
-               'Cij RCA-prod vs US', 'Cij RCA-prod vs CN']
+    # Grouped, plain-language headers. Cij forms: "sum" = DG sum of HS6 (primary),
+    # "wtd-avg" = world-share weighted average, "RCA×RCA" = unweighted RCA product.
+    headers = ['Year',
+               'RCA export', 'RCA import\n(US)', 'RCA import\n(China)',
+               'Cij sum\n(US)', 'Cij sum\n(China)',
+               'Cij wtd-avg\n(US)', 'Cij wtd-avg\n(China)',
+               'Cij RCA×RCA\n(US)', 'Cij RCA×RCA\n(China)']
     for col, text in enumerate(headers):
         table.rows[0].cells[col].text = text
 
@@ -211,8 +232,11 @@ def _add_reporter_tier_table(
         cells[3].text = _format_number(year_row['RCA_Import_CN'], 3)
         cells[4].text = _format_number(year_row['TCI_DG_US'], 4)
         cells[5].text = _format_number(year_row['TCI_DG_CN'], 4)
-        cells[6].text = _format_number(year_row['TCI_RCA_Product_US'], 4)
-        cells[7].text = _format_number(year_row['TCI_RCA_Product_CN'], 4)
+        cells[6].text = _format_number(year_row['TCI_DG_WeightedAvg_US'], 4)
+        cells[7].text = _format_number(year_row['TCI_DG_WeightedAvg_CN'], 4)
+        cells[8].text = _format_number(year_row['TCI_RCA_Product_US'], 4)
+        cells[9].text = _format_number(year_row['TCI_RCA_Product_CN'], 4)
+    _style_table(table)
 
 
 def _add_single_partner_tier_table(
@@ -220,16 +244,17 @@ def _add_single_partner_tier_table(
     year_rows: pd.DataFrame, tier_column: str, tier_prefix: str,
 ) -> None:
     """One table per (reporter, tier-code) for a single reporter→partner pair.
-    Columns: Year | RCA export | RCA import | Cij (DG weighted) | Cij (RCA product)."""
+    Columns: Year | RCA export | RCA import | Cij sum | Cij wtd-avg | Cij RCA×RCA."""
     suffix = tier_suffix(tier_column)
     heading = f"{reporter} → {partner} — {tier_prefix} {tier_code}"
     if label:
         heading += f" ({label})"
     document.add_heading(heading, level=2)
 
-    table = document.add_table(rows=1, cols=5)
+    table = document.add_table(rows=1, cols=6)
     table.style = 'Light Grid Accent 1'
-    headers = ['Year', 'RCA export', 'RCA import', 'Cij (DG weighted)', 'Cij (RCA product)']
+    headers = ['Year', 'RCA export', 'RCA import',
+               'Cij sum', 'Cij wtd-avg', 'Cij RCA×RCA']
     for col, text in enumerate(headers):
         table.rows[0].cells[col].text = text
 
@@ -239,7 +264,9 @@ def _add_single_partner_tier_table(
         cells[1].text = _format_number(row[f'RCA_Export_{suffix}'], 3)
         cells[2].text = _format_number(row[f'RCA_Import_{suffix}'], 3)
         cells[3].text = _format_number(row[f'TCI_DG_{suffix}'], 4)
-        cells[4].text = _format_number(row[f'TCI_RCA_Product_{suffix}'], 4)
+        cells[4].text = _format_number(row[f'TCI_DG_WeightedAvg_{suffix}'], 4)
+        cells[5].text = _format_number(row[f'TCI_RCA_Product_{suffix}'], 4)
+    _style_table(table)
 
 
 def export_word_summary(
@@ -275,6 +302,7 @@ def export_word_summary(
     if china is not None and us is not None:
         merged = _merge_partner_frames(china, us, tier_column, countries, tier_codes)
         document = Document()
+        _apply_page_layout(document)
         document.add_heading(
             'RCA and Cij — Indo-Pacific reporters, US and China as partners, 2001–2024',
             level=0,
@@ -311,6 +339,7 @@ def export_word_summary(
     frame = frame.dropna(subset=['Year'])
 
     document = Document()
+    _apply_page_layout(document)
     document.add_heading(
         f'RCA and Cij — exporter vs {partner_name} (importer), by {tier_prefix} section',
         level=0,

@@ -128,6 +128,27 @@ products inside it. The sum-of-HS6 form preserves the bilateral product alignmen
 captured at the most granular level. (See the project [`README.md`](../README.md) for
 a worked numerical example.)
 
+**Heading-weighted-average form (reported alongside).** Because the sum grows with the
+number of HS 6-digit lines in a heading and with the heading's trade size, it is not
+directly comparable across headings. A weighted-average form is therefore also reported
+(column `TCI_DG_WeightedAvg`):
+
+$$
+\overline{C}_{ij,K} \;=\; \sum_{k \in K} \frac{T_k}{T_K}\,\mathrm{RCA}_{x,k}\,\mathrm{RCA}_{m,k}
+\;=\; \frac{T}{T_K}\sum_{k \in K} C_{ij,k},
+\qquad T_K=\sum_{k\in K}T_k.
+$$
+
+The averaged quantity is the unweighted per-product complementarity
+$\mathrm{RCA}_{x,k}\mathrm{RCA}_{m,k}$ (without the $T_k/T$ factor), and the world-trade
+weight $T_k/T_K$ is applied once. Equivalently, it is the heading Drysdale-Garnaut sum
+scaled by $T/T_K$. This puts every heading on the same scale (comparable to an HS 6-digit
+value). It preserves bilateral alignment (it sums per-product terms, not
+$(\sum X)(\sum M)$), so it is distinct from the product-of-HS4-RCAs form above. Trade-off:
+it is **not additive** — it does not sum to the headline. Use the sum form ($C_{ij,K}$)
+for the headline-consistent index and the weighted average ($\overline{C}_{ij,K}$) for
+comparing headings on a common scale.
+
 ### 5.4 Headline Trade Complementarity Index
 
 For each (reporter, partner, year):

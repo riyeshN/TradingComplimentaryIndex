@@ -279,6 +279,16 @@ class TCICalculator:
             hs4_aggregated['TCI_RCA_Product_4digit'] = (
                 hs4_aggregated['RCA_Export_4digit'] * hs4_aggregated['RCA_Import_4digit']
             )
+            # Heading-weighted-average Cij: world-trade-share weighted MEAN of the
+            # per-product RCA products, Σ_k (T_k/T_K)·RCA_x_k·RCA_m_k, which equals
+            # the heading DG sum scaled by T/T_K (the world share applied once, at
+            # heading level). Comparable across headings; not additive to the
+            # headline (which remains the DG sum).
+            hs4_aggregated['TCI_DG_WeightedAvg_4digit'] = (
+                hs4_aggregated['TCI_DG_4digit']
+                * hs4_aggregated['Total World Export']
+                / hs4_aggregated['World Export HS4 Total'].replace(0, np.nan)
+            ).fillna(0)
 
             # Surface raw HS4 totals under the names the Excel exporter expects.
             hs4_aggregated = hs4_aggregated.rename(columns={
@@ -296,7 +306,7 @@ class TCICalculator:
 
             hs4_aggregated = hs4_aggregated[[
                 'Country', 'Year', 'HS4',
-                'TCI_DG_4digit', 'TCI_RCA_Product_4digit',
+                'TCI_DG_4digit', 'TCI_DG_WeightedAvg_4digit', 'TCI_RCA_Product_4digit',
                 'RCA_Export_4digit', 'RCA_Import_4digit',
                 'Total_Reporter_Export', 'Total_Partner_Import', 'Total_World_Export_K',
                 'Num_Active_HS6_Pairs',
@@ -366,6 +376,12 @@ class TCICalculator:
             hs2_aggregated['TCI_RCA_Product_2digit'] = (
                 hs2_aggregated['RCA_Export_2digit'] * hs2_aggregated['RCA_Import_2digit']
             )
+            # Chapter-weighted-average Cij: Σ_k (T_k/T_K)·RCA_x_k·RCA_m_k = DG sum × T/T_K.
+            hs2_aggregated['TCI_DG_WeightedAvg_2digit'] = (
+                hs2_aggregated['TCI_DG_2digit']
+                * hs2_aggregated['Total World Export']
+                / hs2_aggregated['World Export HS2 Total'].replace(0, np.nan)
+            ).fillna(0)
 
             hs2_aggregated = hs2_aggregated.rename(columns={
                 'World Export HS2 Total': 'Total_World_Export_K',
@@ -379,7 +395,7 @@ class TCICalculator:
 
             hs2_aggregated = hs2_aggregated[[
                 'Country', 'Year', 'HS2',
-                'TCI_DG_2digit', 'TCI_RCA_Product_2digit',
+                'TCI_DG_2digit', 'TCI_DG_WeightedAvg_2digit', 'TCI_RCA_Product_2digit',
                 'RCA_Export_2digit', 'RCA_Import_2digit',
                 'Total_Reporter_Export', 'Total_Partner_Import', 'Total_World_Export_K',
                 'Num_Active_HS6_Pairs',
@@ -456,10 +472,16 @@ class TCICalculator:
             sitc_aggregated['TCI_RCA_Product_sitc'] = (
                 sitc_aggregated['RCA_Export_sitc'] * sitc_aggregated['RCA_Import_sitc']
             )
+            # Section-weighted-average Cij: Σ_k (T_k/T_K)·RCA_x_k·RCA_m_k = DG sum × T/T_K.
+            sitc_aggregated['TCI_DG_WeightedAvg_sitc'] = (
+                sitc_aggregated['TCI_DG_sitc']
+                * sitc_aggregated['Total World Export']
+                / sitc_aggregated['World Export SITC Total'].replace(0, np.nan)
+            ).fillna(0)
 
             sitc_aggregated = sitc_aggregated[[
                 'Country', 'Year', 'SITC',
-                'TCI_DG_sitc', 'TCI_RCA_Product_sitc',
+                'TCI_DG_sitc', 'TCI_DG_WeightedAvg_sitc', 'TCI_RCA_Product_sitc',
                 'RCA_Export_sitc', 'RCA_Import_sitc',
                 'Num_Active_HS6_Pairs',
             ]]
@@ -500,10 +522,16 @@ class TCICalculator:
                 (headline['M_scope'] / headline['M_total'].replace(0, np.nan)) / world_share_scope
             )
             headline['Headline_Cij_RCA_Product'] = (rca_x_scope * rca_m_scope).fillna(0)
+            # Scope-weighted-average Cij: Σ_k (T_k/T_scope)·RCA_x_k·RCA_m_k = headline
+            # DG sum × T/T_scope (world share applied once, at scope level).
+            headline['Headline_Cij_DG_WeightedAvg'] = (
+                headline['Headline_Cij_DG']
+                * headline['W_total'] / headline['W_scope'].replace(0, np.nan)
+            ).fillna(0)
 
             headline = (
                 headline[[
-                    'Country', 'Year', 'Headline_Cij_DG',
+                    'Country', 'Year', 'Headline_Cij_DG', 'Headline_Cij_DG_WeightedAvg',
                     'Headline_Cij_RCA_Product', 'Num_Active_HS6_Pairs',
                 ]]
                 .sort_values(['Country', 'Year'])

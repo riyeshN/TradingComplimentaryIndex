@@ -119,6 +119,14 @@ $$
 
 The headline sum runs over all HS 6-digit commodities in the analysis scope (the 23 HS 4-digit headings of the UNCTAD Information and Communication Technology classification, HS 2022 — see [Scope](#scope) below). HS 4-digit Cij is therefore a sub-aggregate of the headline. This is the Drysdale-Garnaut definition (eq. 2) applied at the heading level and at the country-pair level respectively.
 
+**Heading-weighted-average Cij (`TCI_DG_WeightedAvg`).** Reported alongside the sum form at every tier. It is the world-trade-share weighted *mean* of the per-product complementarities $\mathrm{RCA}_{x,k}\,\mathrm{RCA}_{m,k}$ within the heading, with weights equal to each HS 6-digit code's share of world trade in the heading:
+
+$$
+\overline{C}_{ij,K} \;=\; \sum_{k \in K} \frac{T_k}{T_K}\,\mathrm{RCA}_{x,k}\,\mathrm{RCA}_{m,k} \;=\; \frac{T}{T_K}\sum_{k \in K} C_{ij,k}, \qquad T_K=\sum_{k\in K}T_k
+$$
+
+The averaged quantity is the **unweighted** per-product term $\mathrm{RCA}_{x,k}\mathrm{RCA}_{m,k}$ (no $T_k/T$ inside); the world-trade weight $T_k/T_K$ is applied **once**. Equivalently, it is the heading Drysdale-Garnaut sum scaled by $T/T_K$ — the world share applied once at heading level, leaving every heading on the same scale (comparable to an HS 6-digit value and across headings). It is **not additive** — it does not sum to the headline. It preserves HS 6-digit bilateral matching (it sums per-product terms, $\sum_k \mathrm{RCA}_{x,k}\mathrm{RCA}_{m,k}$-style, not $(\sum_k X_{ik})(\sum_k M_{jk})$), so it is distinct from the rejected product-of-HS4-RCAs form. Use the sum form for the headline-consistent index and the weighted-average for cross-heading comparison.
+
 > **Why HS 4-digit Cij is summed from HS 6-digit and not derived from HS 4-digit RCA.** Once HS 6-digit RCAs are collapsed into HS 4-digit RCAs, the HS 6-digit distribution is lost. Two scenarios that differ entirely at HS 6-digit level can produce identical HS 4-digit RCAs and therefore identical Cij under the product-of-RCAs form:
 >
 > | Scenario | Reporter exports | Partner imports | $\mathrm{RCA}_{x,K}$ | $\mathrm{RCA}_{m,K}$ | Cij from HS4 RCAs | Cij from sum of HS6 |
@@ -147,9 +155,10 @@ data/TradeMapData/export/
 
 | File | Sheet | Granularity | Primary columns |
 |---|---|---|---|
-| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | `Headline_Cij_Drysdale_Garnaut` (weighted), `Headline_Cij_RCA_Product` (unweighted), `Active_HS6_Pairs` |
-| `{partner}_TCI.xlsx` | `HS4 Summary` | Reporter × Year × HS4 | `TCI_Drysdale_Garnaut` (weighted, sum of HS6), `TCI_RCA_Product` (unweighted RCA_x×RCA_m — Yang published form), `RCA_Reporter_Export`, `RCA_Partner_Import`, raw totals, `Active_HS6_Pairs` |
+| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | `Headline_Cij_Drysdale_Garnaut` (weighted sum), `Headline_Cij_DG_WeightedAvg` (scope-weighted average), `Headline_Cij_RCA_Product` (unweighted), `Active_HS6_Pairs` |
+| `{partner}_TCI.xlsx` | `HS4 Summary` | Reporter × Year × HS4 | `TCI_Drysdale_Garnaut` (weighted sum of HS6 — primary, additive to headline), `TCI_DG_WeightedAvg` (heading-weighted average — comparable across headings), `TCI_RCA_Product` (unweighted RCA_x×RCA_m — Yang published form), `RCA_Reporter_Export`, `RCA_Partner_Import`, raw totals, `Active_HS6_Pairs` |
 | `{partner}_TCI.xlsx` | `HS6 Detail` | Reporter × Year × HS6 | `TCI_Drysdale_Garnaut`, `TCI_RCA_DG_Decomposition` (cross-check), `RCA_Reporter_Export`, `RCA_Partner_Import`, `Proportion_World_Trade`, all raw flows |
+| `{partner}_TCI.xlsx` | `World Reference` | HS6 × Year (deduplicated) | World-trade denominators behind every Cij: `World_Export_HS6_Tk` (T_k), `World_Export_HS4_Total` (T_K), `Total_World_Export` (T), `Share_Tk_over_T_pct`. Partner-independent; filter `Product_Code` to look up e.g. 8541xx |
 | `{partner}_{HS4}_TCI_DG.png` | — | Time series | HS4 DG Cij per reporter (23 × 2 = 46 PNGs) |
 | `RCA_Cij_Summary.docx` | — | Reporter × HS4 | Method section + one RCA/Cij year table per (reporter, HS4), US and China columns merged |
 
