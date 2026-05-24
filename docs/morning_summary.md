@@ -40,6 +40,24 @@ classification / RCA computation), not our index.
 
 ---
 
+## Later additions (output + monitoring)
+
+- **Weighted-average Cij** (`TCI_DG_WeightedAvg`) added at every tier + headline,
+  beside the DG-sum and RCA-product. Formula: `Σ_k (T_k/T_K)·RCA_x·RCA_m` =
+  `DG-sum × (T/T_K)` — world-share weighted MEAN of the per-product RCA products
+  (NOT the DG term — weighting the DG term double-applies the world share; that
+  bug was caught and fixed). Comparable across tiers; not additive to the headline.
+- **Word doc**: now landscape, narrow margins, tier-aware method section, and
+  three Cij columns per partner (`Cij sum` / `Cij wtd-avg` / `Cij RCA×RCA`).
+- **World Reference sheet** in every workbook: deduplicated T_k / T_K / T per
+  (HS6, year) + `Share_Tk_over_T_pct`, for monitoring the Cij denominators.
+- **8524 (code reuse)** restricted to 2022+ (vacated HS2007 → reintroduced
+  HS2022). The restriction moved into the loader (`_drop_restricted_codes`) so it
+  hits the numerator AND the tier denominators — fixing a ~2% chapter-85
+  HS2/HS4 denominator inflation in 2001–2006 (now reconciles to zero).
+
+---
+
 ## What changed in this session
 
 In order:

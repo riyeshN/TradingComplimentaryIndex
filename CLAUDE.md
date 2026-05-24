@@ -71,8 +71,8 @@ The pipeline is parameterised by a `Scope` record (`loadFiles/services/scope.py`
 
 Output goes to `data/TradeMapData/export/{scope.name}/`. `TCICalculator(scope=...).run(...)` defaults to `SCOPE_ICT`.
 
-1. `_load_from_db()` — delegates to `trade_data_loader.load_all()` (returns a `LoadedTradeData` bundle with HS4 *and* HS2 precomputed canonical-source totals plus TOTAL-row denominators)
-2. `_filter_by_scope_and_year()` — restricts HS6 rows to `scope.filter_codes` (matched on the first `scope.filter_digits` characters of `Product code`) and years 2001–2024. Also drops vacated/re-used codes before their current meaning per `RESTRICTED_CODE_FIRST_VALID_YEAR` (currently `{'8524': 2022}`): HS 8524 was vacated in HS2007 (recorded media) and reintroduced in HS2022 (flat-panel display modules), so its 2007–2021 rows carry meaningless RCAs (near-zero world denominator) and mix two products — kept only for 2022+. Applies to every scope; the Word doc carries a matching "Data notes" paragraph
+1. `_load_from_db()` — delegates to `trade_data_loader.load_all()` (returns a `LoadedTradeData` bundle with HS4 *and* HS2 precomputed canonical-source totals plus TOTAL-row denominators). `load_all` drops vacated/re-used codes before their current meaning via `_drop_restricted_codes` + `RESTRICTED_CODE_FIRST_VALID_YEAR` (currently `{'8524': 2022}`) applied to **every product-level frame** — so the numerator (HS6 Cij sum) **and** all tier denominators (world/partner/reporter HS4/HS2/SITC totals) are built from one code universe. (HS 8524 was vacated in HS2007 = recorded media, reintroduced in HS2022 = flat-panel display modules; pre-2022 rows carry meaningless RCAs and mix two products. Earlier the restriction sat only on the numerator, inflating the chapter-85 HS2/HS4 denominator ~2% in 2001–2006 — now fixed.) The Word doc carries a matching "Data notes" paragraph
+2. `_filter_by_scope_and_year()` — restricts HS6 rows to `scope.filter_codes` (matched on the first `scope.filter_digits` characters of `Product code`) and years 2001–2024
 3. `_calculate_tci_drysdale_garnaut()` — HS6 DG: `(Xi_k/Xi) × (Mj_k/Mj) × (WX/WX_k)`
 4. `_calculate_rca_and_tci_rca()` — HS6 Balassa RCAs; HS6 RCA-decomposition TCI (`TCI_RCA_DG_Decomposition`, internal cross-check); `Active_Pair` flag per row
 5. `_aggregate_hs6_to_hs4()` — HS4 Cij = sum of HS6 Cij in heading (preserves bilateral product matching); HS4 RCA computed directly from canonical-source HS4 totals (`Reporter Export HS4 Total`, `Partner Import HS4 Total`, `World Export HS4 Total`). Also emits `TCI_DG_WeightedAvg` — the heading-weighted-average Cij `Σ_k (T_k/T_K)·RCA_x_k·RCA_m_k` = `(T/T_K)·Σ_k Cij_k` (world-trade-share weighted mean of the per-product RCA products, equivalently the heading DG sum scaled by T/T_K; world share applied once; comparable across headings, not additive to the headline). Same column at HS2, SITC, headline tiers. NB: weight the *unweighted* RCA product, not the DG term — weighting the DG term double-applies T_k/T
@@ -81,7 +81,7 @@ Output goes to `data/TradeMapData/export/{scope.name}/`. `TCICalculator(scope=..
 8. `_verify_partner_invariants()` — runtime regression guard; raises `ValueError` on partner-side or tier-additivity divergence. Four checks for ICT scope (HS6 + HS4); eight for strategic scope (adds HS2 tier and tier-additivity)
 9. `_export_excel(countries, hs4_codes)` — writes `{scope}/{partner}_TCI.xlsx`. ICT scope: Country, HS4, HS6, World Reference. Strategic scope: adds HS2. Every workbook ends with a **World Reference** sheet — one row per (HS6, year) with T_k (`World_Export_HS6`), T_K (`World_Export_HS4_Total`), T (`Total_World_Export`), and `Share_Tk_over_T_pct`; deduplicated and partner-independent. The `hs4_codes` filter applies to the tier and HS6 sheets only — the headline always reports the full scope number, and World Reference is always the complete scope
 10. `_export_hs4_tci_charts(countries, hs4_codes)` — writes one PNG per primary-tier code per partner: time series of DG Cij by reporter country
-11. `_export_word_summary(countries, hs4_codes)` — writes `{scope}/RCA_Cij_Summary.docx`: method section plus one RCA/Cij year table per (reporter, primary-tier code) with US and China columns merged. Each table reports **both Cij forms** per partner — `Cij DG` (weighted) and `Cij RCA-prod` (unweighted RCA product) — i.e. 8 columns (Year, RCA export, RCA import US/CN, Cij DG US/CN, Cij RCA-prod US/CN). Layout mirrors `readings/RCA_Cij_Summary.docx`
+11. `_export_word_summary(countries, hs4_codes)` — writes `{scope}/RCA_Cij_Summary.docx` (landscape, narrow margins, tier-aware method section via `_tier_vocabulary`): one RCA/Cij year table per (reporter, primary-tier code). Two-partner scopes (ICT/strategic) = **10 columns** — Year, RCA export, RCA import US/CN, then **three Cij forms** × 2 partners: `Cij sum` (DG, additive primary), `Cij wtd-avg` (`TCI_DG_WeightedAvg` = `(T/T_K)·Σ RCA_x·RCA_m`, comparable across tiers, not additive), `Cij RCA×RCA` (unweighted RCA product, Yang form). Single-partner (Yang) = 6 columns. Carries a "Data notes" section (8524 restriction; the three Cij forms)
 
 **Key data structures (on `TCICalculator`):**
 - `hs6_trade_data_by_partner` — long-format per partner ("China", "US")
@@ -98,13 +98,13 @@ Parses all TSV files in `data/TradeMapData/data/`, upserts into DB, then archive
 
 | Scope | File | Content |
 |---|---|---|
-| ict | `{partner}_TCI.xlsx` sheets `Country Summary`, `HS4 Summary`, `HS6 Detail` | 23 ICT HS4 headings, three-tier structure |
+| ict | `{partner}_TCI.xlsx` sheets `Country Summary`, `HS4 Summary`, `HS6 Detail`, `World Reference` | 23 ICT HS4 headings, three-tier structure |
 | ict | `{partner}_{HS4}_TCI_DG.png` | 46 charts (23 × 2 partners) |
 | ict | `RCA_Cij_Summary.docx` | 368 reporter-HS4 tables + method section |
-| strategic | `{partner}_TCI.xlsx` sheets `Country Summary`, `HS2 Summary`, `HS4 Summary`, `HS6 Detail` | 10 strategic HS2 chapters; full HS4 + HS6 detail inside |
+| strategic | `{partner}_TCI.xlsx` sheets `Country Summary`, `HS2 Summary`, `HS4 Summary`, `HS6 Detail`, `World Reference` | 10 strategic HS2 chapters; full HS4 + HS6 detail inside |
 | strategic | `{partner}_{HS2}_TCI_DG.png` | 20 charts (10 × 2 partners) |
 | strategic | `RCA_Cij_Summary.docx` | 160 reporter-HS2 tables + method section |
-| yang | `CCE_TCI.xlsx` sheets `Country Summary`, `SITC Summary`, `HS4 Summary`, `HS6 Detail` | china→CEE, SITC primary tier. Same pipeline (`scope=SCOPE_YANG, partner_names=('CCE',)`). Word doc skipped (single partner) |
+| yang | `CCE_TCI.xlsx` sheets `Country Summary`, `SITC Summary`, `HS4 Summary`, `HS6 Detail`, `World Reference` | china→CEE, SITC primary tier. Same pipeline (`scope=SCOPE_YANG, partner_names=('CCE',)`). Word doc uses the single-partner layout (6-col table: RCA export/import + 3 Cij forms) |
 | yang | `CCE_{SITC}_TCI_DG.png` | 10 SITC-section charts |
 
 External cross-validation report:

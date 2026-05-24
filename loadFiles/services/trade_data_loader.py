@@ -159,6 +159,31 @@ def _drop_total_rows(frames: dict[str, pd.DataFrame]) -> None:
         frames[key] = df[~_is_total(df['Product code'])]
 
 
+# HS codes that were vacated and later re-used for a different product, so their
+# pre-reintroduction years carry meaningless trade (near-zero world denominator,
+# two products in one series). Keyed by HS-code prefix → first valid year.
+# Dropped from EVERY product-level frame here in the loader, so the numerator
+# (HS6 Cij sum) and ALL denominators (world/partner/reporter HS4/HS2/SITC totals)
+# are built from the same code universe — see the chapter-85 denominator note.
+#   8524: vacated in HS2007 ("recorded media"); reintroduced in HS2022
+#         ("flat-panel display modules"). Valid only 2022+.
+RESTRICTED_CODE_FIRST_VALID_YEAR = {'8524': 2022}
+
+
+def _drop_restricted_codes(frames: dict[str, pd.DataFrame]) -> None:
+    """In-place drop of vacated/re-used codes in years before their current
+    meaning, from every product-level table (numerator and denominators alike)."""
+    for key in ('bilateral', 'reporter_world', 'partner_import', 'world_export'):
+        df = frames[key]
+        product_code = df['Product code'].astype(str)
+        year = pd.to_numeric(df['Year'], errors='coerce')
+        keep = pd.Series(True, index=df.index)
+        for code_prefix, first_valid_year in RESTRICTED_CODE_FIRST_VALID_YEAR.items():
+            contaminated = product_code.str[:len(code_prefix)].eq(code_prefix) & (year < first_valid_year)
+            keep &= ~contaminated
+        frames[key] = df[keep]
+
+
 def _world_hs4_totals(world_export_df: pd.DataFrame) -> pd.DataFrame:
     """
     World total exports per HS4 heading per year, summed across ALL HS6 codes in
@@ -395,6 +420,7 @@ def load_all(
 
     totals = _extract_totals(frames)
     _drop_total_rows(frames)
+    _drop_restricted_codes(frames)
 
     world_export_product_labels = (
         frames['world_export'][['Product code', 'Product label']].drop_duplicates('Product code')

@@ -160,18 +160,19 @@ data/TradeMapData/export/
 | `{partner}_TCI.xlsx` | `HS6 Detail` | Reporter × Year × HS6 | `TCI_Drysdale_Garnaut`, `TCI_RCA_DG_Decomposition` (cross-check), `RCA_Reporter_Export`, `RCA_Partner_Import`, `Proportion_World_Trade`, all raw flows |
 | `{partner}_TCI.xlsx` | `World Reference` | HS6 × Year (deduplicated) | World-trade denominators behind every Cij: `World_Export_HS6_Tk` (T_k), `World_Export_HS4_Total` (T_K), `Total_World_Export` (T), `Share_Tk_over_T_pct`. Partner-independent; filter `Product_Code` to look up e.g. 8541xx |
 | `{partner}_{HS4}_TCI_DG.png` | — | Time series | HS4 DG Cij per reporter (23 × 2 = 46 PNGs) |
-| `RCA_Cij_Summary.docx` | — | Reporter × HS4 | Method section + one RCA/Cij year table per (reporter, HS4), US and China columns merged |
+| `RCA_Cij_Summary.docx` | — | Reporter × HS4 | Method section + one RCA/Cij year table per (reporter, HS4), US and China columns merged; three Cij forms per partner (DG-sum, DG weighted-average, RCA product); landscape layout |
 
 ### Part I — `strategic/` (Country, HS2, HS4, HS6 tiers)
 
 | File | Sheet | Granularity | Notes |
 |---|---|---|---|
-| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | Headline DG + RCA-product Cij over strategic scope |
-| `{partner}_TCI.xlsx` | `HS2 Summary` | Reporter × Year × HS2 chapter | DG + RCA-product Cij at chapter; HS2 RCA from canonical totals |
+| `{partner}_TCI.xlsx` | `Country Summary` | Reporter × Year | Headline DG-sum + DG weighted-average + RCA-product Cij over strategic scope |
+| `{partner}_TCI.xlsx` | `HS2 Summary` | Reporter × Year × HS2 chapter | DG-sum + DG weighted-average + RCA-product Cij at chapter; HS2 RCA from canonical totals |
 | `{partner}_TCI.xlsx` | `HS4 Summary` | Reporter × Year × HS4 | Same schema as ICT scope; full HS4 detail inside strategic chapters |
 | `{partner}_TCI.xlsx` | `HS6 Detail` | Reporter × Year × HS6 | Full HS6 audit (large file: ~100MB) |
+| `{partner}_TCI.xlsx` | `World Reference` | HS6 × Year (deduplicated) | T_k / T_K / T denominators + `Share_Tk_over_T_pct` |
 | `{partner}_{HS2}_TCI_DG.png` | — | Time series | HS2 DG Cij per reporter (10 × 2 = 20 PNGs) |
-| `RCA_Cij_Summary.docx` | — | Reporter × HS2 | Method section + one RCA/Cij year table per (reporter, HS2 chapter) |
+| `RCA_Cij_Summary.docx` | — | Reporter × HS2 | Method section + one RCA/Cij year table per (reporter, HS2 chapter); three Cij forms per partner |
 
 The `hs4_codes` filter applies to the HS-tier and HS6 sheets only — the `Country Summary` sheet always reports the full scope headline regardless of subset.
 

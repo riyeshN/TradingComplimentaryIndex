@@ -12,15 +12,9 @@ from loadFiles.services.exporters import (
 
 EXPORT_DIR = "./data/TradeMapData/export/"
 YEARS_TO_INCLUDE = [str(y) for y in range(2001, 2025)]
-
-# HS codes that were vacated and later re-used for a different product, so their
-# pre-reintroduction years carry meaningless trade (near-zero world denominator →
-# exploding RCA) and mix two different products in one series. Keyed by HS code
-# prefix → first year the code is valid in its current meaning. Rows for that
-# code prefix before the year are dropped from every scope.
-#   8524: vacated in HS2007 (was "recorded media"); reintroduced in HS2022 as
-#         "flat-panel display modules". Only 2022+ is a coherent series.
-RESTRICTED_CODE_FIRST_VALID_YEAR = {'8524': 2022}
+# Vacated/re-used HS codes (e.g. 8524) are dropped before their current meaning
+# in trade_data_loader._drop_restricted_codes — applied to every product-level
+# frame there, so the numerator and all tier denominators share one code universe.
 
 
 class TCICalculator:
@@ -128,21 +122,18 @@ class TCICalculator:
         """Filter HS6 rows by scope (HS-prefix match) and the configured year range.
         An empty `filter_codes` means no HS filter (keep the whole HS6 universe —
         used by the Yang scope, which spans all SITC sections)."""
+        # Vacated/re-used codes (8524 pre-2022) are already dropped upstream in
+        # trade_data_loader._drop_restricted_codes, so both the HS6 rows here and
+        # the canonical tier totals share one code universe.
         prefix_len  = self.scope.filter_digits
         prefix_set  = set(self.scope.filter_codes)
         for partner_name, hs6_data in self.hs6_trade_data_by_partner.items():
-            product_code = hs6_data['Product code'].astype(str)
-            year_numeric = pd.to_numeric(hs6_data['Year'], errors='coerce')
             year_mask = hs6_data['Year'].astype(str).isin(YEARS_TO_INCLUDE)
             if prefix_set:
-                prefix = product_code.str[:prefix_len]
+                prefix = hs6_data['Product code'].astype(str).str[:prefix_len]
                 mask = prefix.isin(prefix_set) & year_mask
             else:
                 mask = year_mask
-            # Drop vacated/re-used codes in the years before their current meaning.
-            for code_prefix, first_valid_year in RESTRICTED_CODE_FIRST_VALID_YEAR.items():
-                contaminated = product_code.str[:len(code_prefix)].eq(code_prefix) & (year_numeric < first_valid_year)
-                mask &= ~contaminated
             self.hs6_trade_data_by_partner[partner_name] = hs6_data[mask]
 
     def _calculate_tci_drysdale_garnaut(self):

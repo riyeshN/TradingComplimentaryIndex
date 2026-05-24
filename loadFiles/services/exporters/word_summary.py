@@ -183,6 +183,14 @@ def _add_method_section(document, tier_column: str = 'HS4') -> None:
         "(2023, Table 3).")
 
     document.add_heading('Data notes', level=2)
+    if tier_column == 'HS2':
+        document.add_paragraph(
+            "Strategic scope covers 10 of the 11 HS2 chapters in the Freund, "
+            "Mattoo, Mulabdic & Ruta (JIE) strategic-industry list. Chapter 98 is "
+            "omitted: HS chapters 98–99 are reserved for national use and are not "
+            "part of the internationally harmonized HS nomenclature (chapters "
+            "1–97), so they carry no comparable trade data in ITC Trade Map or "
+            "UN Comtrade.")
     document.add_paragraph(
         "HS code 8524 is reported for 2022 onward only. The code was vacated in "
         "the HS 2007 revision (where it had meant recorded media) and "
