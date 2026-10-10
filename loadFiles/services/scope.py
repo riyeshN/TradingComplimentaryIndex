@@ -17,30 +17,16 @@ research context and `readings/` for source documents.
 """
 
 from __future__ import annotations
-
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Scope:
     """Describes one analysis scope used by the TCI pipeline."""
-
-    # Short identifier used for output subdirectory naming (e.g. 'ict', 'strategic').
     name: str
-
-    # Length in characters of the HS prefix to compare against `filter_codes`.
-    # 4 → match HS4 headings (e.g. '8542'). 2 → match HS2 chapters (e.g. '84').
     filter_digits: int
-
-    # HS prefixes that define which HS6 codes are kept after filtering.
     filter_codes: tuple[str, ...]
-
-    # Primary reporting tier — drives chart granularity, Word doc table grouping,
-    # and which Excel summary sheets are emitted. 'HS4' for ICT, 'HS2' for strategic.
     primary_tier: str
-
-    # Display labels keyed by the primary-tier code. Used in Word docs and
-    # chart titles. Sourced from the same authority as filter_codes.
     primary_labels: dict[str, str]
 
 
@@ -85,11 +71,6 @@ SCOPE_ICT = Scope(
 SCOPE_STRATEGIC = Scope(
     name='strategic',
     filter_digits=2,
-    # JIE Appendix Table 1 lists eleven HS2 chapters; chapter 98 ("Special
-    # classification provisions") is omitted here because TradeMap source data
-    # contains zero rows for that chapter — it's country-specific reserved
-    # codes (US 9801/9802 etc.) typically suppressed from international trade
-    # datasets.
     filter_codes=('28', '29', '30', '38', '84', '85', '87', '88', '90', '93'),
     primary_tier='HS2',
     primary_labels={
@@ -110,9 +91,6 @@ SCOPE_STRATEGIC = Scope(
 SCOPE_YANG = Scope(
     name='yang',
     filter_digits=2,
-    # Empty filter_codes = keep the entire HS6 universe (no HS-prefix filter).
-    # Yang (2023) spans all SITC sections, so no commodity scope restriction;
-    # the SITC grouping happens in the SITC aggregation tier.
     filter_codes=(),
     primary_tier='SITC',
     primary_labels={

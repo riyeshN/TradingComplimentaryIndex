@@ -1,0 +1,108 @@
+% Compile: pdflatex calculations.tex
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,xcolor,hyperref}
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue!60!black}
+\setlength{\parskip}{6pt}\setlength{\parindent}{0pt}
+
+\title{\vspace{-2em}Trade Complementarity Index --- Calculations}
+\author{}\date{}
+\begin{document}\maketitle\vspace{-2em}
+
+\section*{What this measures}
+The TCI checks whether one country's exports match another country's imports. A high TCI means the two are natural trading partners. We compute it for each Indo-Pacific reporter against China and the US, first at HS6, then rolled up to HS4.
+
+\section*{Notation}
+HS chapters 84--90, years 2001--2024, all values in USD thousands.
+
+\begin{center}\small
+\begin{tabular}{ll}
+\toprule
+$X_{i,k}$ & Reporter $i$'s exports of product $k$ to the world \\
+$X_{i}$   & Reporter $i$'s total exports \\
+$X_{i,k}^{j}$ & Reporter $i$'s exports of $k$ to partner $j$ \\
+$M_{j,k}$ & Partner $j$'s imports of $k$ from the world \\
+$M_{j}$   & Partner $j$'s total imports \\
+$W_{k}$   & World exports of $k$ \\
+$W$       & World exports total \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Step 1 --- RCA at HS6}
+RCA tells us whether a country sells more of product $k$ than the world average. Above 1 means specialized; below 1 means under-specialized.
+
+\begin{equation*}
+\mathrm{RCA}^{X}_{i,k} = \frac{X_{i,k}/X_{i}}{W_{k}/W}
+\qquad
+\mathrm{RCA}^{M}_{j,k} = \frac{M_{j,k}/M_{j}}{W_{k}/W}
+\end{equation*}
+
+Source: Balassa (1965).
+
+\section*{Step 2 --- TCI at HS6}
+TCI checks whether reporter $i$'s exports of $k$ line up with partner $j$'s imports of $k$. We compute it two ways and verify they match (algebraically they must --- if they don't, there's a bug).
+
+\begin{equation*}
+\mathrm{TCI}_{i,j,k} = \frac{X_{i,k}}{X_{i}} \cdot \frac{M_{j,k}}{M_{j}} \cdot \frac{W}{W_{k}}
+\quad = \quad
+\mathrm{RCA}^{X}_{i,k} \cdot \mathrm{RCA}^{M}_{j,k} \cdot \frac{W_{k}}{W}
+\end{equation*}
+
+\section*{Step 3 --- Roll up HS6 to HS4}
+
+\textbf{Active filter.} An HS6 line counts only if both sides actually trade it: $X_{i,k}^{j} > 0$ AND $M_{j,k} > 0$. This keeps phantom codes from HS revisions out of the average.
+
+\textbf{Weight.} Each active HS6 gets a weight equal to its share of the reporter's trade in that HS4 group:
+\begin{equation*}
+w_{i,j,k} = \frac{X_{i,k}}{\sum_{k' \text{ active in } h} X_{i,k'}}
+\end{equation*}
+
+\textbf{HS4 TCI.} Weighted average of the HS6 values:
+\begin{equation*}
+\mathrm{TCI}_{i,j,h} = \sum_{k \in h} w_{i,j,k} \cdot \mathrm{TCI}_{i,j,k}
+\end{equation*}
+
+We also compute TCI directly at HS4 from HS4-level totals as a second integrity check:
+\begin{equation*}
+\mathrm{TCI}^{RCA}_{i,j,h} = \mathrm{RCA}^{X}_{i,h} \cdot \mathrm{RCA}^{M}_{j,h} \cdot \frac{W_{h}}{W}
+\end{equation*}
+
+\section*{Open questions to resolve}
+A few methodology and scope decisions are still open. The numbers in the current outputs reflect the choices noted below; if any of these change, the relevant tables need to be regenerated.
+
+\begin{enumerate}\setlength{\itemsep}{2pt}
+  \item \textbf{HS4 aggregation method.} The current rollup (Step 3) uses a weighted average with the reporter's HS6 export share as the weight. The strict Drysdale--Garnaut formulation sums the HS6 TCI values directly, with no second weighting. The two give different HS4 numbers (e.g., Korea--China 2020 HS 8542: 0.33 weighted average vs.\ 0.69 strict sum). Need to confirm which to use.
+  \item \textbf{ICT scope.} The UNCTAD HS 2022 ICT goods classification covers 23 HS4 headings (107 HS6 codes). It is unclear whether to use the full UNCTAD list or a narrower subset focused on computers, semiconductors, and telecommunications.
+  \item \textbf{IIT (Intra-Industry Trade) index.} A second index was requested alongside TCI but the formula has not been specified. The Grubel--Lloyd index is the standard choice; needs to be confirmed.
+  \item \textbf{HS revision handling.} The dataset spans HS 1996, 2002, 2007, 2012, 2017, and 2022. Legacy codes (e.g., 8542.10 smart cards reclassified in HS 2007) carry residual values from late-adopting reporters past their nominal end dates. Currently retained at HS6; aggregated correctly at HS4. Confirm this is the intended treatment.
+\end{enumerate}
+
+\section*{Outputs}
+For each partner (China, US), in \texttt{data/TradeMapData/export/}:
+\begin{itemize}\setlength{\itemsep}{0pt}
+  \item \texttt{\{partner\}\_TCI.xlsx} --- HS4 Summary (one row per Country/Year/HS4) and HS6 Detail (one row per Country/Year/HS6, with all inputs and weights).
+  \item \texttt{\{partner\}\_\{HS4\}\_TCI\_RCA.png} --- TCI over time, one line per reporter.
+\end{itemize}
+
+\section*{Where the code lives}
+All formulas are in \href{../loadFiles/services/TCICalculator.py}{\texttt{TCICalculator.py}}:
+
+\begin{center}\small
+\begin{tabular}{ll}
+\toprule
+\textbf{What} & \textbf{Function} \\
+\midrule
+Filter scope (chapters, years)   & \texttt{\_filter\_by\_hs\_chapter\_and\_year} \\
+RCA at HS6                       & \texttt{\_calculate\_rca\_and\_tci\_rca} \\
+TCI at HS6 (Drysdale--Garnaut form) & \texttt{\_calculate\_tci\_drysdale\_garnaut} \\
+TCI at HS6 (RCA form)            & \texttt{\_calculate\_rca\_and\_tci\_rca} \\
+HS4 weights and rollup           & \texttt{\_aggregate\_hs6\_to\_hs4} \\
+Excel and chart output           & \texttt{\_export\_excel}, \texttt{\_export\_hs4\_tci\_charts} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Input data is validated against UN Comtrade, and RCA values are validated against World Bank WITS. See \href{validation_methodology.md}{\texttt{validation\_methodology.md}}.
+
+\end{document}

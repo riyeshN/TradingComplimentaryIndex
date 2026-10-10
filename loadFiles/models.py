@@ -25,8 +25,8 @@ class HSSITCConcordance(models.Model):
     spans multiple HS revisions (HS2007/2012/2017/2022); the same HS6 code can
     map to different SITC codes across revisions, so a row is identified by
     (product_code, hs_revision). The SITC section assigned to a year's HS6 row
-    is the one from the revision active that year (see
-    `trade_data_loader.hs_revision_for_year`). Loaded per revision by
+    is the one from the revision active that year (the HS-revision CASE in
+    `sql_tci.sitc_index_sql`). Loaded per revision by
     `load_hs_sitc_concordance --revision <YYYY>`."""
     product_code = models.CharField(max_length=10)   # HS6
     hs_revision = models.CharField(max_length=4)      # '2007' | '2012' | '2017' | '2022'

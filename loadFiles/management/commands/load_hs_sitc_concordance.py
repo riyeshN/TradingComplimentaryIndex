@@ -5,8 +5,8 @@ HSSITCConcordance table, tagged by HS revision (vintage-aware).
 The trade panel spans multiple HS revisions (HS2007/2012/2017/2022). The same
 HS6 code can map to different SITC codes across revisions, so each row is keyed
 by (product_code, hs_revision). A year's HS6 row is later assigned the SITC
-section from the revision active that year (see
-`trade_data_loader.hs_revision_for_year`). Run this command once per revision.
+section from the revision active that year (the HS-revision CASE in
+`sql_tci.sitc_index_sql`). Run this command once per revision.
 
 The UN correspondence files are heterogeneous (.xls / .xlsx, different sheet
 names, title-block junk rows, dotted or plain codes), so columns are located by
